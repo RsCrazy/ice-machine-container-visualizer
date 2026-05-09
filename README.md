@@ -27,38 +27,60 @@
 | Node.js | 18+ |
 | npm | 9+ |
 
-### 第一步：克隆并创建虚拟环境
+### 第一步：克隆并安装依赖
 
 ```bash
-# 在项目根目录创建 Python 虚拟环境
+# 创建 Python 虚拟环境（项目根目录）
 python3 -m venv .venv
 source .venv/bin/activate      # macOS / Linux
 # .venv\Scripts\activate       # Windows
+
+# 安装后端依赖
+pip install -r backend/requirements.txt
+
+# 安装前端依赖
+cd frontend && npm install && cd ..
 ```
 
-### 第二步：启动后端
+### 第二步：一键启动 / 关闭
+
+安装完依赖后，使用项目根目录下的脚本管理服务：
 
 ```bash
-cd backend
-pip install -r requirements.txt
+# 启动前端 + 后端
+./start.sh
 
-# 启动 FastAPI 开发服务器
+# 关闭所有服务
+./stop.sh
+```
+
+| 脚本 | 说明 |
+|------|------|
+| `start.sh` | 同时启动后端（`:8000`）和前端（`:5173`），日志写入 `.logs/` |
+| `stop.sh` | 关闭所有服务，优先按 PID 文件关闭，兜底按端口 kill |
+
+启动后访问：
+- **前端界面**：`http://localhost:5173`
+- **API 文档**：`http://localhost:8000/docs`
+
+### 手动分步启动（可选）
+
+<details>
+<summary>展开查看手动命令</summary>
+
+**后端：**
+```bash
+cd backend
 uvicorn app.main:app --reload --port 8000
 ```
 
-后端启动后访问 `http://localhost:8000/docs` 可查看交互式 API 文档。
-
-### 第三步：启动前端
-
-新开一个终端：
-
+**前端（新开终端）：**
 ```bash
 cd frontend
-npm install
 npm run dev
 ```
 
-浏览器打开 `http://localhost:5173` 即可使用。
+</details>
 
 ---
 
