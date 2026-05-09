@@ -1,3 +1,22 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# OS
 .DS_Store
-*.pdf
-CLAUDE.md
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Claude Code internal
+.claude/
