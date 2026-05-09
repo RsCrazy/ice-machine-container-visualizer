@@ -20,3 +20,8 @@ Thumbs.db
 
 # Claude Code internal
 .claude/
+
+# 本地文档（不进 repo）
+CLAUDE.md
+index.html
+Packing_Visualization_Demo.pdf
