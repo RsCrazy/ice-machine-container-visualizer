@@ -58,23 +58,7 @@ export interface AppState {
   reset: () => void
 }
 
-const INITIAL_ITEMS: ItemIn[] = [
-  { name: 'IcePro-L1500-001', model: 'IcePro-L1500', length: 760, width: 690, height: 1580, weight: 162 },
-  { name: 'IcePro-L1500-002', model: 'IcePro-L1500', length: 760, width: 690, height: 1580, weight: 162 },
-  { name: 'IcePro-M1200-001', model: 'IcePro-M1200', length: 640, width: 610, height: 1280, weight: 118 },
-  { name: 'IcePro-M1200-002', model: 'IcePro-M1200', length: 640, width: 610, height: 1280, weight: 118 },
-  { name: 'IcePro-M1200-003', model: 'IcePro-M1200', length: 640, width: 610, height: 1280, weight: 118 },
-  { name: 'IceMid-S900-001',  model: 'IceMid-S900',  length: 560, width: 530, height: 990,  weight: 83  },
-  { name: 'IceMid-S900-002',  model: 'IceMid-S900',  length: 560, width: 530, height: 990,  weight: 83  },
-  { name: 'IceMid-S900-003',  model: 'IceMid-S900',  length: 560, width: 530, height: 990,  weight: 83  },
-  { name: 'IceMid-S900-004',  model: 'IceMid-S900',  length: 560, width: 530, height: 990,  weight: 83  },
-  { name: 'IceMini-700-001',  model: 'IceMini-700',  length: 450, width: 420, height: 780,  weight: 51  },
-  { name: 'IceMini-700-002',  model: 'IceMini-700',  length: 450, width: 420, height: 780,  weight: 51  },
-  { name: 'IceMini-700-003',  model: 'IceMini-700',  length: 450, width: 420, height: 780,  weight: 51  },
-  { name: 'IceMini-700-004',  model: 'IceMini-700',  length: 450, width: 420, height: 780,  weight: 51  },
-  { name: 'IceMini-700-005',  model: 'IceMini-700',  length: 450, width: 420, height: 780,  weight: 51  },
-  { name: 'IceMini-700-006',  model: 'IceMini-700',  length: 450, width: 420, height: 780,  weight: 51  },
-]
+const INITIAL_ITEMS: ItemIn[] = []
 
 export const useAppStore = create<AppState>((set) => ({
   itemTypes: loadTypes(),

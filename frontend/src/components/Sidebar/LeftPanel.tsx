@@ -13,7 +13,7 @@ export default function LeftPanel() {
   const {
     items, allowRotation, packResult,
     setPackResult, setAllowRotation, setLoading, setError,
-    isLoading, error, reset,
+    isLoading, error, reset, setItems,
   } = useAppStore()
   const [tab, setTab] = useState<Tab>('cargo')
   const [showForm, setShowForm] = useState(false)
@@ -71,14 +71,6 @@ export default function LeftPanel() {
                 {showForm ? '收起' : '＋ 添加'}
               </button>
             )}
-            {packResult && (
-              <button
-                onClick={reset}
-                className="text-[#666] hover:text-[#999] transition-colors"
-              >
-                重置
-              </button>
-            )}
           </div>
 
           {showForm && <ItemForm onClose={() => setShowForm(false)} />}
@@ -106,22 +98,43 @@ export default function LeftPanel() {
             </label>
 
             {!packResult ? (
-              <button
-                onClick={handlePack}
-                disabled={isLoading || items.length === 0}
-                className="w-full py-2.5 rounded-lg text-sm font-medium transition-all
-                  bg-[#c9a96e]/20 text-[#c9a96e] border border-[#c9a96e]/30
-                  hover:bg-[#c9a96e]/30 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {isLoading ? '计算中…' : '开始装载'}
-              </button>
+              <>
+                <button
+                  onClick={() => setItems([])}
+                  disabled={isLoading || items.length === 0}
+                  className="w-full py-2.5 rounded-lg text-sm font-medium transition-all
+                    bg-transparent text-[#666] border border-[#2a2a2a]
+                    hover:text-[#999] hover:border-[#444] disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  清空货物
+                </button>
+                <button
+                  onClick={handlePack}
+                  disabled={isLoading || items.length === 0}
+                  className="w-full py-2.5 rounded-lg text-sm font-medium transition-all
+                    bg-[#c9a96e]/20 text-[#c9a96e] border border-[#c9a96e]/30
+                    hover:bg-[#c9a96e]/30 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {isLoading ? '计算中…' : '开始装载'}
+                </button>
+              </>
             ) : (
-              <button
-                disabled
-                className="w-full py-2.5 rounded-lg text-sm font-medium text-[#555] border border-[#2a2a2a] cursor-not-allowed opacity-60"
-              >
-                导出报告（占位）
-              </button>
+              <>
+                <button
+                  onClick={reset}
+                  className="w-full py-2.5 rounded-lg text-sm font-medium transition-all
+                    bg-transparent text-[#666] border border-[#2a2a2a]
+                    hover:text-[#999] hover:border-[#444]"
+                >
+                  重置
+                </button>
+                <button
+                  disabled
+                  className="w-full py-2.5 rounded-lg text-sm font-medium text-[#555] border border-[#2a2a2a] cursor-not-allowed opacity-60"
+                >
+                  导出报告（占位）
+                </button>
+              </>
             )}
           </div>
         </>
