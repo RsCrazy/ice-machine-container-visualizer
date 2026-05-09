@@ -46,7 +46,7 @@ export default function ItemForm({ onClose }: { onClose: () => void }) {
     if (!model) return setErr('请填写型号')
     if ([length, width, height, weight].some((v) => isNaN(v) || v <= 0))
       return setErr('尺寸和重量必须大于 0')
-    if (qty < 1 || qty > 99) return setErr('数量须在 1–99 之间')
+    if (qty < 1 || qty > 1000) return setErr('数量须在 1–1000 之间')
 
     // Count existing items of same model to build sequential names
     let existingCount = items.filter((i) => i.model === model).length
@@ -159,13 +159,13 @@ export default function ItemForm({ onClose }: { onClose: () => void }) {
             <input
               type="number"
               min={1}
-              max={99}
+              max={1000}
               value={qty}
-              onChange={(e) => setQty(Math.max(1, Math.min(99, parseInt(e.target.value) || 1)))}
+              onChange={(e) => setQty(Math.max(1, Math.min(1000, parseInt(e.target.value) || 1)))}
               className="w-12 bg-[#222] border border-[#2a2a2a] rounded px-2 py-1 text-xs text-[#ddd] text-center focus:outline-none focus:border-[#c9a96e]/50"
             />
             <button
-              onClick={() => setQty((q) => Math.min(99, q + 1))}
+              onClick={() => setQty((q) => Math.min(1000, q + 1))}
               className="w-6 h-6 rounded bg-[#222] border border-[#2a2a2a] text-[#666] hover:text-[#aaa] text-sm flex items-center justify-center"
             >＋</button>
           </div>
