@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { packItems } from '../../api/client'
 import { useAppStore } from '../../store/useAppStore'
+import { exportToPdf } from '../../utils/exportPdf'
 import CargoList from './CargoList'
 import StatsPanel from './StatsPanel'
 import ItemForm from './ItemForm'
@@ -17,6 +18,7 @@ export default function LeftPanel() {
   } = useAppStore()
   const [tab, setTab] = useState<Tab>('cargo')
   const [showForm, setShowForm] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
 
   const handlePack = async () => {
     if (items.length === 0) return
@@ -29,6 +31,16 @@ export default function LeftPanel() {
       setError(e instanceof Error ? e.message : '请求失败')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleExport = () => {
+    if (!packResult) return
+    setIsExporting(true)
+    try {
+      exportToPdf(packResult)
+    } finally {
+      setIsExporting(false)
     }
   }
 
@@ -129,10 +141,13 @@ export default function LeftPanel() {
                   重置
                 </button>
                 <button
-                  disabled
-                  className="w-full py-2.5 rounded-lg text-sm font-medium text-[#555] border border-[#2a2a2a] cursor-not-allowed opacity-60"
+                  onClick={handleExport}
+                  disabled={isExporting}
+                  className="w-full py-2.5 rounded-lg text-sm font-medium transition-all
+                    bg-[#c9a96e]/20 text-[#c9a96e] border border-[#c9a96e]/30
+                    hover:bg-[#c9a96e]/30 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  导出报告（占位）
+                  {isExporting ? '生成中…' : '导出 PDF 报告'}
                 </button>
               </>
             )}
