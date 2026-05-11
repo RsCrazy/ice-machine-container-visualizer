@@ -4,11 +4,16 @@ importer.py
 Parse cargo manifests from Excel (.xlsx / .xls) or JSON files.
 
 Expected Excel columns (order-independent, case-insensitive, stripped):
-    name | model | length | width | height | weight
+    name | model | length | width | height | weight | allow_free_rotation (optional)
+
+  allow_free_rotation accepts: 1 / 0, TRUE / FALSE, YES / NO (case-insensitive).
+  Omitting the column is equivalent to all-False.
 
 Expected JSON format:
     [{"name": "A-001", "model": "IM-100", "length": 800, "width": 600,
-      "height": 1200, "weight": 120}, ...]
+      "height": 1200, "weight": 120, "allow_free_rotation": false}, ...]
+
+  "allow_free_rotation" key is optional; defaults to false when absent.
 """
 from __future__ import annotations
 
@@ -24,7 +29,13 @@ from .models import Item
 # Required column names (normalised)
 _REQUIRED_COLS = {"name", "model", "length", "width", "height", "weight"}
 
+# Optional columns and their defaults
+_OPTIONAL_DEFAULTS: dict[str, object] = {"allow_free_rotation": False}
+
 _NUMERIC_COLS = {"length", "width", "height", "weight"}
+
+_TRUTHY = {"1", "true", "yes"}
+_FALSY  = {"0", "false", "no", ""}
 
 
 class ImportError(ValueError):
@@ -54,11 +65,15 @@ def parse_excel(data: bytes) -> list[Item]:
         raise ImportError(f"Missing column(s): {', '.join(sorted(missing))}")
 
     col_idx = {name: header.index(name) for name in _REQUIRED_COLS}
+    # optional columns — only present when the sheet contains them
+    opt_idx = {name: header.index(name) for name in _OPTIONAL_DEFAULTS if name in header}
 
     items: list[Item] = []
     for row_num, row in enumerate(rows[1:], start=2):
         try:
             raw = {k: row[idx] for k, idx in col_idx.items()}
+            for name, default in _OPTIONAL_DEFAULTS.items():
+                raw[name] = row[opt_idx[name]] if name in opt_idx else default
             item = _row_to_item(raw, row_num)
             items.append(item)
         except ImportError:
@@ -89,6 +104,9 @@ def parse_json(data: Union[bytes, str]) -> list[Item]:
         if missing:
             raise ImportError(f"Item {idx}: missing field(s): {', '.join(sorted(missing))}")
         normalised = {_normalise(k): v for k, v in obj.items()}
+        # fill optional fields with defaults when absent
+        for name, default in _OPTIONAL_DEFAULTS.items():
+            normalised.setdefault(name, default)
         items.append(_row_to_item(normalised, idx))
 
     if not items:
@@ -117,6 +135,8 @@ def _row_to_item(raw: dict, row_ref: int) -> Item:
             raise ImportError(f"Row/item {row_ref}: '{col}' must be > 0, got {fval}.")
         floats[col] = fval
 
+    allow_free_rotation = _parse_bool(raw.get("allow_free_rotation", False), row_ref)
+
     return Item(
         name=name,
         model=model,
@@ -124,4 +144,21 @@ def _row_to_item(raw: dict, row_ref: int) -> Item:
         width=floats["width"],
         height=floats["height"],
         weight=floats["weight"],
+        allow_free_rotation=allow_free_rotation,
+    )
+
+
+def _parse_bool(value: object, row_ref: int) -> bool:
+    """Coerce Excel/JSON cell values to bool for allow_free_rotation."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    s = str(value).strip().lower()
+    if s in _TRUTHY:
+        return True
+    if s in _FALSY:
+        return False
+    raise ImportError(
+        f"Row/item {row_ref}: 'allow_free_rotation' must be true/false/1/0, got {value!r}."
     )

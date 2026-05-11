@@ -12,7 +12,7 @@ from .routers import import_, pack
 app = FastAPI(
     title="Ice-Machine Container Loading API",
     description="3D bin-packing optimiser for 20GP containers.",
-    version="1.0.0",
+    version="1.1.1",
 )
 
 app.add_middleware(

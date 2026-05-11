@@ -105,26 +105,30 @@ npm run dev
 
 1. 在左侧面板底部的「导入文件」区域拖入文件，或点击选择文件
 2. 支持格式：
-   - **Excel**（.xlsx）：需包含列 `name / model / length / width / height / weight`
-   - **JSON**（.json）：格式为对象数组，字段同上
+   - **Excel**（.xlsx）：需包含列 `name / model / length / width / height / weight`，可选列 `allow_free_rotation`
+   - **JSON**（.json）：格式为对象数组，必填字段同上，`allow_free_rotation` 可选
 3. 导入后自动运行装箱算法并显示结果
 
 Excel 示例格式：
 
-| name | model | length | width | height | weight |
-|------|-------|--------|-------|--------|--------|
-| A-001 | IcePro-L1500 | 760 | 690 | 1580 | 162 |
-| B-001 | IcePro-M1200 | 640 | 610 | 1280 | 118 |
+| name | model | length | width | height | weight | allow_free_rotation |
+|------|-------|--------|-------|--------|--------|---------------------|
+| A-001 | IcePro-L1500 | 760 | 690 | 1580 | 162 | 0 |
+| B-001 | IcePro-M1200 | 640 | 610 | 1280 | 118 | 1 |
+| C-001 | IceMini-700 | 500 | 480 | 700 | 60 | （可省略，默认 0）|
+
+> `allow_free_rotation` 列**可省略**（整列不存在等同于全部为 `0`）。合法值：`1` / `0`、`TRUE` / `FALSE`、`YES` / `NO`（不区分大小写）。
 
 JSON 示例格式：
 
 ```json
 [
   { "name": "A-001", "model": "IcePro-L1500", "length": 760, "width": 690, "height": 1580, "weight": 162 },
-  { "name": "B-001", "model": "IcePro-M1200", "length": 640, "width": 610, "height": 1280, "weight": 118 }
+  { "name": "B-001", "model": "IcePro-M1200", "length": 640, "width": 610, "height": 1280, "weight": 118, "allow_free_rotation": true }
 ]
 ```
 
+> `allow_free_rotation` 键**可省略**，缺失时默认 `false`。  
 > 所有尺寸单位为 **毫米（mm）**，重量单位为 **千克（kg）**
 
 ### 类型库
