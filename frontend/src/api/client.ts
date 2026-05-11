@@ -1,4 +1,4 @@
-import type { ImportPreview, ItemIn, PackResponse } from '../types/api'
+import type { ContainerType, ImportPreview, ItemIn, PackResponse } from '../types/api'
 
 async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -11,11 +11,30 @@ async function handleResponse<T>(res: Response): Promise<T> {
 export async function packItems(
   items: ItemIn[],
   allowRotation = true,
+  containerTypes: ContainerType[] = [],
 ): Promise<PackResponse> {
+  const body: Record<string, unknown> = {
+    items: items.map(i => ({
+      ...i,
+      allow_free_rotation: i.allow_free_rotation ?? false,
+    })),
+    allow_rotation: allowRotation,
+  }
+
+  if (containerTypes.length > 0) {
+    body.container_types = containerTypes.map(ct => ({
+      name:     ct.name,
+      length:   ct.length,
+      width:    ct.width,
+      height:   ct.height,
+      cost_usd: ct.cost,
+    }))
+  }
+
   const res = await fetch('/api/pack', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ items, allow_rotation: allowRotation }),
+    body: JSON.stringify(body),
   })
   return handleResponse<PackResponse>(res)
 }

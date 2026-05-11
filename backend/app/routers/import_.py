@@ -54,8 +54,8 @@ async def import_and_pack(
             detail=f"Unsupported file type: {file.filename!r}. Upload .xlsx or .json.",
         )
 
-    result       = pack(items, allow_rotation=allow_rotation)
-    pack_resp    = _build_response(result)
+    result    = pack(items, allow_rotation=allow_rotation)
+    pack_resp = _build_response(result)
     parsed_items = [
         ItemIn(
             name=i.name,

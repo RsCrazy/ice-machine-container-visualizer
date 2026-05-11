@@ -1,17 +1,20 @@
 import { useRef } from 'react'
 import * as THREE from 'three'
 
-// 20GP inner dimensions in mm → Three.js units (1 unit = 1 mm)
-const L = 5898, W = 2352, H = 2393
+interface Props {
+  l?: number
+  w?: number
+  h?: number
+}
 
-export default function ContainerMesh() {
+export default function ContainerMesh({ l = 5898, w = 2352, h = 2393 }: Props) {
   const edgesRef = useRef<THREE.LineSegments>(null)
 
   return (
-    <group position={[L / 2, H / 2, W / 2]}>
+    <group position={[l / 2, h / 2, w / 2]}>
       {/* Faint filled box for depth cueing */}
       <mesh>
-        <boxGeometry args={[L, H, W]} />
+        <boxGeometry args={[l, h, w]} />
         <meshBasicMaterial
           color={0x1a1a2a}
           transparent
@@ -22,7 +25,7 @@ export default function ContainerMesh() {
 
       {/* Gold wireframe edges */}
       <lineSegments ref={edgesRef}>
-        <edgesGeometry args={[new THREE.BoxGeometry(L, H, W)]} />
+        <edgesGeometry args={[new THREE.BoxGeometry(l, h, w)]} />
         <lineBasicMaterial color={0xc9a96e} transparent opacity={0.7} />
       </lineSegments>
     </group>

@@ -10,17 +10,12 @@ import LayerPlane from './LayerPlane'
 import Tooltip3D from './Tooltip3D'
 import type { PlacedItemOut } from '../../types/api'
 
-const L = 5898, W = 2352, H = 2393
-
-// Minimal interface for OrbitControls ref (avoids three-stdlib direct import)
 interface ControlsRef {
   target: THREE.Vector3
   object: THREE.Camera & { position: THREE.Vector3 }
   update(): void
 }
 
-// Flies the camera target towards `dest`, maintaining current orbit offset.
-// Rendered inside Canvas so useFrame is valid here.
 function CameraRig({
   controlsRef,
   dest,
@@ -32,7 +27,6 @@ function CameraRig({
     const ctrl = controlsRef.current
     if (!ctrl || !dest) return
     if (ctrl.target.distanceTo(dest) < 2) return
-    // Keep orbit offset (angle + distance) fixed; only relocate pivot
     const offset = ctrl.object.position.clone().sub(ctrl.target)
     ctrl.target.lerp(dest, 0.1)
     ctrl.object.position.copy(ctrl.target).add(offset)
@@ -48,7 +42,11 @@ export default function ContainerScene() {
 
   const bin = packResult?.bins[activeBin] ?? null
 
-  // Compute the 3-D centre of the highlighted item (null = no animation)
+  // Use active bin's actual container dimensions, fall back to 20GP defaults
+  const L = bin?.container_l ?? 5898
+  const W = bin?.container_w ?? 2352
+  const H = bin?.container_h ?? 2393
+
   const cameraTarget = useMemo<THREE.Vector3 | null>(() => {
     if (!highlightedItem || !bin) return null
     const p = bin.placed.find((it) => it.name === highlightedItem)
@@ -78,7 +76,7 @@ export default function ContainerScene() {
         <directionalLight position={[-L, H, -W]} intensity={0.3} />
 
         <Suspense fallback={null}>
-          <ContainerMesh />
+          <ContainerMesh l={L} w={W} h={H} />
           <LayerPlane height={layerHeight} />
 
           {bin?.placed.map((p, i) => (
@@ -94,7 +92,6 @@ export default function ContainerScene() {
             />
           ))}
 
-          {/* Empty container hint */}
           {!bin && (
             <mesh position={[L / 2, H / 2, W / 2]}>
               <boxGeometry args={[1, 1, 1]} />
@@ -120,7 +117,7 @@ export default function ContainerScene() {
 
       {/* Floating label */}
       <div className="absolute top-3 left-3 text-[10px] uppercase tracking-widest text-[#444] select-none">
-        20GP 集装箱 · {L}×{W}×{H} mm
+        {bin?.container_type ?? '20GP'} · {L}×{W}×{H} mm
       </div>
 
       {tooltip && (

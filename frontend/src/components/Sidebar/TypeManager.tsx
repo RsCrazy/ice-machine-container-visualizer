@@ -2,9 +2,9 @@ import { useState } from 'react'
 import { useAppStore, modelColor } from '../../store/useAppStore'
 import type { ItemType } from '../../types/api'
 
-const EMPTY = { model: '', length: '', width: '', height: '', weight: '' }
+const EMPTY = { model: '', length: '', width: '', height: '', weight: '', allowFreeRotation: false }
 
-const FIELDS: Array<{ k: keyof typeof EMPTY; label: string; unit?: string }> = [
+const FIELDS: Array<{ k: keyof Omit<typeof EMPTY, 'allowFreeRotation'>; label: string; unit?: string }> = [
   { k: 'model',  label: '型号' },
   { k: 'length', label: '长度', unit: 'mm' },
   { k: 'width',  label: '宽度', unit: 'mm' },
@@ -19,15 +19,15 @@ export default function TypeManager() {
   const [err, setErr] = useState('')
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
 
-  const handle = (k: keyof typeof EMPTY, v: string) =>
+  const handleText = (k: keyof Omit<typeof EMPTY, 'allowFreeRotation'>, v: string) =>
     setForm((f) => ({ ...f, [k]: v }))
 
   const submit = () => {
     const model = form.model.trim()
     if (!model) return setErr('请填写型号名称')
-    const l = parseFloat(form.length)
-    const w = parseFloat(form.width)
-    const h = parseFloat(form.height)
+    const l  = parseFloat(form.length)
+    const w  = parseFloat(form.width)
+    const h  = parseFloat(form.height)
     const wt = parseFloat(form.weight)
     if ([l, w, h, wt].some((v) => isNaN(v) || v <= 0))
       return setErr('尺寸和重量必须大于 0')
@@ -37,6 +37,7 @@ export default function TypeManager() {
     const newType: ItemType = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
       model, length: l, width: w, height: h, weight: wt,
+      allowFreeRotation: form.allowFreeRotation,
     }
     addItemType(newType)
     setForm({ ...EMPTY })
@@ -77,7 +78,6 @@ export default function TypeManager() {
                   : 'border-[#2a2a2a] bg-[#1e1e1e] hover:border-[#333]'
               }`}
             >
-              {/* Left accent bar */}
               <span
                 className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l"
                 style={{ background: color }}
@@ -85,15 +85,21 @@ export default function TypeManager() {
 
               <div className="pl-1 flex items-start gap-2">
                 <div className="flex-1 min-w-0">
-                  <div className="text-xs font-medium text-[#ddd] leading-tight truncate">
-                    {t.model}
+                  <div className="flex items-center gap-1.5">
+                    <div className="text-xs font-medium text-[#ddd] leading-tight truncate">
+                      {t.model}
+                    </div>
+                    {t.allowFreeRotation && (
+                      <span className="text-[9px] px-1 py-0.5 rounded bg-[#a47fe8]/20 text-[#a47fe8] border border-[#a47fe8]/30 flex-shrink-0">
+                        自由旋转
+                      </span>
+                    )}
                   </div>
                   <div className="text-[10px] text-[#444] mt-0.5 tabular-nums">
                     {t.length}×{t.width}×{t.height} mm · {t.weight} kg
                   </div>
                 </div>
 
-                {/* Delete button — always visible */}
                 <button
                   onClick={() => handleDelete(t.id)}
                   onBlur={() => setConfirmDelete(null)}
@@ -124,13 +130,31 @@ export default function TypeManager() {
                 type={k === 'model' ? 'text' : 'number'}
                 min={0}
                 placeholder={unit ?? '型号名称'}
-                value={form[k]}
-                onChange={(e) => handle(k, e.target.value)}
+                value={form[k] as string}
+                onChange={(e) => handleText(k, e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && submit()}
                 className="flex-1 bg-[#222] border border-[#2a2a2a] rounded px-2 py-1 text-xs text-[#ddd] focus:outline-none focus:border-[#c9a96e]/50"
               />
             </div>
           ))}
+
+          {/* Free rotation toggle */}
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-[10px] text-[#555] w-10 flex-shrink-0">旋转</span>
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <div
+                onClick={() => setForm((f) => ({ ...f, allowFreeRotation: !f.allowFreeRotation }))}
+                className={`w-7 h-3.5 rounded-full transition-colors relative flex-shrink-0 ${
+                  form.allowFreeRotation ? 'bg-[#a47fe8]/60' : 'bg-[#2a2a2a]'
+                }`}
+              >
+                <span className={`absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white shadow transition-all ${
+                  form.allowFreeRotation ? 'left-[14px]' : 'left-0.5'
+                }`} />
+              </div>
+              <span className="text-[10px] text-[#666]">允许自由旋转（6 朝向）</span>
+            </label>
+          </div>
 
           {err && <div className="text-[10px] text-[#e86e6e] mb-1.5">{err}</div>}
 

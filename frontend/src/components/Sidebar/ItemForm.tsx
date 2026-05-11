@@ -33,7 +33,7 @@ export default function ItemForm({ onClose }: { onClose: () => void }) {
 
   const handle = (k: keyof FormFields, v: string) => {
     setForm((f) => ({ ...f, [k]: v }))
-    if (k !== 'model') setSelectedType(null) // manual edit deselects type
+    if (k !== 'model') setSelectedType(null)
   }
 
   const submit = () => {
@@ -48,7 +48,6 @@ export default function ItemForm({ onClose }: { onClose: () => void }) {
       return setErr('尺寸和重量必须大于 0')
     if (qty < 1 || qty > 1000) return setErr('数量须在 1–1000 之间')
 
-    // Count existing items of same model to build sequential names
     let existingCount = items.filter((i) => i.model === model).length
     const newItems = []
     for (let i = 0; i < qty; i++) {
@@ -57,7 +56,10 @@ export default function ItemForm({ onClose }: { onClose: () => void }) {
       if (items.some((it) => it.name === name)) {
         return setErr(`名称 ${name} 已存在，请先清理清单`)
       }
-      newItems.push({ name, model, length, width, height, weight })
+      newItems.push({
+        name, model, length, width, height, weight,
+        allow_free_rotation: selectedType?.allowFreeRotation ?? false,
+      })
     }
 
     newItems.forEach((it) => addItem(it))
@@ -82,7 +84,7 @@ export default function ItemForm({ onClose }: { onClose: () => void }) {
         ) : (
           <div className="flex flex-col gap-1">
             {itemTypes.map((t) => {
-              const color = modelColor(t.model)
+              const color  = modelColor(t.model)
               const active = selectedType?.id === t.id
               return (
                 <button
@@ -99,12 +101,17 @@ export default function ItemForm({ onClose }: { onClose: () => void }) {
                     style={{ background: color }}
                   />
                   <div className="pl-2 flex items-center justify-between">
-                    <span className={`text-xs font-medium ${active ? 'text-[#c9a96e]' : 'text-[#bbb]'}`}>
-                      {t.model}
-                    </span>
-                    <span className="text-[10px] text-[#444] tabular-nums">
-                      {t.weight} kg
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className={`text-xs font-medium ${active ? 'text-[#c9a96e]' : 'text-[#bbb]'}`}>
+                        {t.model}
+                      </span>
+                      {t.allowFreeRotation && (
+                        <span className="text-[9px] px-1 rounded bg-[#a47fe8]/20 text-[#a47fe8] border border-[#a47fe8]/30">
+                          自由
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[10px] text-[#444] tabular-nums">{t.weight} kg</span>
                   </div>
                   <div className="pl-2 text-[10px] text-[#3a3a3a] tabular-nums mt-0.5">
                     {t.length}×{t.width}×{t.height} mm
@@ -116,13 +123,12 @@ export default function ItemForm({ onClose }: { onClose: () => void }) {
         )}
       </div>
 
-      {/* ── Dimension fields (editable after type selection) ── */}
+      {/* ── Dimension fields ── */}
       <div className="px-3 pb-2 border-t border-[#222] pt-2">
         <div className="text-[10px] uppercase tracking-widest text-[#444] mb-2">
           规格 {selectedType ? <span className="text-[#555] normal-case tracking-normal">（可手动修改）</span> : ''}
         </div>
 
-        {/* Model */}
         <div className="flex items-center gap-2 mb-1.5">
           <span className="text-[10px] text-[#555] w-10 flex-shrink-0">型号</span>
           <input
@@ -147,6 +153,15 @@ export default function ItemForm({ onClose }: { onClose: () => void }) {
             />
           </div>
         ))}
+
+        {/* Free rotation indicator (read-only, inherited from type) */}
+        {selectedType?.allowFreeRotation && (
+          <div className="flex items-center gap-2 mb-1.5 px-0.5">
+            <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#a47fe8]/20 text-[#a47fe8] border border-[#a47fe8]/30">
+              ↻ 此类型允许自由旋转（6 朝向）
+            </span>
+          </div>
+        )}
 
         {/* Quantity */}
         <div className="flex items-center gap-2 mb-1.5">

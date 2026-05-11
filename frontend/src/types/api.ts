@@ -1,3 +1,12 @@
+export interface ContainerType {
+  id: string
+  name: string
+  length: number
+  width: number
+  height: number
+  cost: number
+}
+
 export interface ItemType {
   id: string
   model: string
@@ -5,6 +14,7 @@ export interface ItemType {
   width: number
   height: number
   weight: number
+  allowFreeRotation?: boolean
 }
 
 export interface ItemIn {
@@ -14,6 +24,7 @@ export interface ItemIn {
   width: number
   height: number
   weight: number
+  allow_free_rotation?: boolean
 }
 
 export interface PlacedItemOut {
@@ -24,14 +35,24 @@ export interface PlacedItemOut {
   z: number
   eff_l: number
   eff_w: number
-  height: number
-  rotation: number
+  height: number   // effective placed height (eff_h)
+  rotation: number // 0–5
   support_ratio: number
   weight: number
 }
 
+export interface CostComparisonItem {
+  type_name: string
+  num_bins: number
+  total_cost: number
+}
+
 export interface BinOut {
   index: number
+  container_type: string
+  container_l: number
+  container_w: number
+  container_h: number
   placed: PlacedItemOut[]
   fill_ratio: number
   total_weight_kg: number
@@ -62,6 +83,7 @@ export interface PackResponse {
   unplaced: UnplacedItemOut[]
   lower_bound: number
   stats: PackStats
+  cost_comparison: CostComparisonItem[]
 }
 
 export interface ImportPreview {

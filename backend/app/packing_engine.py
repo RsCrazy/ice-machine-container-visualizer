@@ -1,32 +1,32 @@
 """
 packing_engine.py
 =================
-Core 3D bin-packing algorithm for 20GP ice-machine container loading.
+Core 3D bin-packing algorithm for ice-machine container loading.
 
-Algorithm overview
-------------------
+Rotation codes (0–5)
+--------------------
+When an item has allow_free_rotation=True, all 6 flat-upright orientations are
+tried; otherwise only codes 0 (original) and 1 (horizontal 90°) are used.
+
+  Code | eff_l × eff_w (floor) | eff_h (vertical)
+  -----|------------------------|------------------
+    0  | L × W                  | H   (default upright)
+    1  | W × L                  | H   (horizontal 90°)
+    2  | L × H                  | W   (original W becomes vertical)
+    3  | H × L                  | W
+    4  | W × H                  | L   (original L becomes vertical)
+    5  | H × W                  | L
+
 Phase 1 — Lower bound
     LB = max(ceil(ΣVolume / V_container), ceil(ΣFootprint / A_floor))
-    This is the theoretical minimum number of containers needed.
 
 Phase 2 — BFD greedy placement
-    Items are sorted by weight DESC (heaviest first), volume DESC as tiebreaker.
-    For each item, scan all open bins and pick the one with the least remaining
-    volume that can still accommodate the item (Best-Fit Decreasing).
-    Within each bin, candidate positions come from the Extreme Point set.
+    Items sorted by weight DESC, volume DESC. For each item, scan open bins
+    and pick the best-fit (least remaining volume). Within a bin, positions
+    come from the Extreme Point set.
 
 Phase 3 — Local search
     Try to eliminate the last bin by redistributing its items into earlier bins.
-    Repeat until no further reduction is possible.
-
-Constraints
------------
-- No flipping / tilting: item height is fixed (upright only).
-- Horizontal rotation only: length ↔ width may be swapped (90° about Y axis).
-- Weight order: heavier items are placed first, so they naturally occupy lower
-  positions. The EP sort (lowest Y first) reinforces this.
-- Support ratio: for any item placed above floor level, the fraction of its
-  bottom face overlapping items directly below must be ≥ MIN_SUPPORT (0.80).
 """
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ import math
 from typing import Optional
 
 from .models import (
-    Bin, EPS, CONTAINER_H, CONTAINER_L, CONTAINER_W,
+    Bin, ContainerSpec, DEFAULT_20GP, EPS,
     Item, MIN_SUPPORT, PackResult, PlacedItem,
 )
 
@@ -43,7 +43,6 @@ from .models import (
 # ── Geometry helpers ──────────────────────────────────────────────────────────
 
 def _overlap_1d(a1: float, a2: float, b1: float, b2: float) -> float:
-    """Signed overlap length of two 1-D segments."""
     return max(0.0, min(a2, b2) - max(a1, b1))
 
 
@@ -52,37 +51,28 @@ def _support_ratio(
     x: float, y: float, z: float,
     placed: list[PlacedItem],
 ) -> float:
-    """
-    Compute the fraction of an item's bottom face (eff_l × eff_w at height y)
-    that is physically supported by already-placed items whose top face is at y.
-
-    Items sitting on the floor (y ≈ 0) are always 100 % supported.
-    """
+    """Fraction of the item's bottom face (eff_l × eff_w at height y) that is supported."""
     if y < EPS:
         return 1.0
-
     item_area = eff_l * eff_w
     if item_area < EPS:
         return 1.0
-
     covered = 0.0
     for p in placed:
-        if abs(p.y2 - y) > EPS:          # only items whose top touches y
+        if abs(p.y2 - y) > EPS:
             continue
         ox = _overlap_1d(x, x + eff_l, p.x, p.x2)
         oz = _overlap_1d(z, z + eff_w, p.z, p.z2)
         covered += ox * oz
-
     return min(1.0, covered / item_area)
 
 
 def _collides(
-    eff_l: float, eff_w: float, h: float,
+    eff_l: float, eff_w: float, eff_h: float,
     x: float, y: float, z: float,
     placed: list[PlacedItem],
 ) -> bool:
-    """Return True if the proposed bounding box overlaps any placed item."""
-    x2, y2, z2 = x + eff_l, y + h, z + eff_w
+    x2, y2, z2 = x + eff_l, y + eff_h, z + eff_w
     for p in placed:
         if (x  < p.x2 - EPS and x2 > p.x  + EPS and
                 y  < p.y2 - EPS and y2 > p.y  + EPS and
@@ -92,38 +82,64 @@ def _collides(
 
 
 def _fits_container(
-    eff_l: float, eff_w: float, h: float,
+    eff_l: float, eff_w: float, eff_h: float,
     x: float, y: float, z: float,
     b: Bin,
 ) -> bool:
     return (
         x >= -EPS and x + eff_l <= b.L + EPS and
-        y >= -EPS and y + h     <= b.H + EPS and
+        y >= -EPS and y + eff_h <= b.H + EPS and
         z >= -EPS and z + eff_w <= b.W + EPS
     )
+
+
+# ── Orientation helpers ───────────────────────────────────────────────────────
+
+def _get_orientations(
+    item: Item, allow_rotation: bool,
+) -> list[tuple[float, float, float, int]]:
+    """
+    Return (eff_l, eff_w, eff_h, rotation_code) tuples to try for an item.
+
+    Free-rotation items get all 6 distinct orientations (deduplicated by dims).
+    Standard items get 1 or 2 horizontal orientations.
+    """
+    L, W, H = item.length, item.width, item.height
+
+    if item.allow_free_rotation:
+        candidates = [
+            (L, W, H, 0), (W, L, H, 1),
+            (L, H, W, 2), (H, L, W, 3),
+            (W, H, L, 4), (H, W, L, 5),
+        ]
+        seen:   set[tuple[int, int, int]] = set()
+        result: list[tuple[float, float, float, int]] = []
+        for (el, ew, eh, rot) in candidates:
+            key = (round(el), round(ew), round(eh))
+            if key not in seen:
+                seen.add(key)
+                result.append((el, ew, eh, rot))
+        return result
+
+    if allow_rotation and abs(L - W) > EPS:
+        return [(L, W, H, 0), (W, L, H, 1)]
+    return [(L, W, H, 0)]
 
 
 # ── Extreme-point management ──────────────────────────────────────────────────
 
 def _update_eps(b: Bin, p: PlacedItem) -> None:
-    """
-    After placing p, extend the extreme-point set with three new candidates
-    (one per outward face of p), then purge points that are:
-      - outside the container
-      - strictly inside any already-placed item
-      - duplicates (rounded to 1 mm)
-    """
+    """Extend EP set with three new candidates from p's outward faces, then prune."""
     b.eps.extend([
-        (p.x2, p.y,  p.z ),   # right face  (+X)
-        (p.x,  p.y2, p.z ),   # top face    (+Y)
-        (p.x,  p.y,  p.z2),   # back face   (+Z)
+        (p.x2, p.y,  p.z ),
+        (p.x,  p.y2, p.z ),
+        (p.x,  p.y,  p.z2),
     ])
 
     seen:  set[tuple[int, int, int]] = set()
     clean: list[tuple[float, float, float]] = []
 
     for (ex, ey, ez) in b.eps:
-        # Clamp to container boundaries
         ex = max(0.0, min(ex, b.L))
         ey = max(0.0, min(ey, b.H))
         ez = max(0.0, min(ez, b.W))
@@ -132,7 +148,6 @@ def _update_eps(b: Bin, p: PlacedItem) -> None:
         if key in seen:
             continue
 
-        # Drop points that fall strictly inside a placed item
         inside = any(
             q.x + EPS < ex < q.x2 - EPS and
             q.y + EPS < ey < q.y2 - EPS and
@@ -152,36 +167,23 @@ def _update_eps(b: Bin, p: PlacedItem) -> None:
 
 def _try_place(item: Item, b: Bin, allow_rotation: bool) -> Optional[PlacedItem]:
     """
-    Search all extreme points × orientations for a valid position.
-
-    Sorting strategy: prefer the lowest Y (floor first → heavy-bottom rule),
-    then smallest X, then smallest Z.
-
-    Returns the best PlacedItem found, or None.
+    Search all extreme points × orientations for the best valid position.
+    Prefer lowest Y (floor-first), then smallest X, then smallest Z.
     """
-    orientations: list[tuple[float, float, int]] = [
-        (item.length, item.width, 0),
-    ]
-    if allow_rotation and abs(item.length - item.width) > EPS:
-        orientations.append((item.width, item.length, 90))
-
-    # Sort EPs once; the first valid hit for each orientation is already optimal
-    # because we break as soon as we find a floor-level placement.
+    orientations = _get_orientations(item, allow_rotation)
     sorted_eps = sorted(b.eps, key=lambda ep: (round(ep[1]), round(ep[0]), round(ep[2])))
 
-    best:     Optional[PlacedItem] = None
+    best:     Optional[PlacedItem]      = None
     best_key: tuple[float, float, float] = (math.inf, math.inf, math.inf)
 
     for (ex, ey, ez) in sorted_eps:
-        # Early exit: nothing can beat a floor-level placement
         if best is not None and ey > best_key[0] + EPS:
             break
 
-        for (eff_l, eff_w, rot) in orientations:
-            h = item.height
-            if not _fits_container(eff_l, eff_w, h, ex, ey, ez, b):
+        for (eff_l, eff_w, eff_h, rot) in orientations:
+            if not _fits_container(eff_l, eff_w, eff_h, ex, ey, ez, b):
                 continue
-            if _collides(eff_l, eff_w, h, ex, ey, ez, b.placed):
+            if _collides(eff_l, eff_w, eff_h, ex, ey, ez, b.placed):
                 continue
             sr = _support_ratio(eff_l, eff_w, ex, ey, ez, b.placed)
             if sr < MIN_SUPPORT:
@@ -193,6 +195,7 @@ def _try_place(item: Item, b: Bin, allow_rotation: bool) -> Optional[PlacedItem]
                 best = PlacedItem(
                     item=item, x=ex, y=ey, z=ez,
                     rotation=rot, support_ratio=sr,
+                    eff_l=eff_l, eff_w=eff_w, eff_h=eff_h,
                 )
 
     return best
@@ -200,40 +203,28 @@ def _try_place(item: Item, b: Bin, allow_rotation: bool) -> Optional[PlacedItem]
 
 # ── Lower bound ───────────────────────────────────────────────────────────────
 
-def compute_lower_bound(items: list[Item]) -> int:
+def compute_lower_bound(
+    items: list[Item],
+    container_spec: Optional[ContainerSpec] = None,
+) -> int:
     """
-    Return max(volume lower bound, footprint lower bound).
-
-    Volume LB  = ceil(ΣV_item / V_container)
-    Footprint LB = ceil(ΣA_item / A_floor)
-        (assumes items can be packed arbitrarily in the height direction)
-
-    The actual optimum is always ≥ this value.
+    Return max(volume lower bound, footprint lower bound) for the given spec.
+    Footprint uses per-item minimum face area when free rotation is enabled.
     """
     if not items:
         return 0
-
-    cv = CONTAINER_L * CONTAINER_W * CONTAINER_H
-    ca = CONTAINER_L * CONTAINER_W
-
+    spec = container_spec or DEFAULT_20GP
+    cv = spec.L * spec.W * spec.H
+    ca = spec.L * spec.W
     lb_vol  = math.ceil(sum(i.volume    for i in items) / cv)
     lb_area = math.ceil(sum(i.footprint for i in items) / ca)
-
     return max(lb_vol, lb_area, 1)
 
 
 # ── Local search ──────────────────────────────────────────────────────────────
 
 def _local_search(bins: list[Bin], allow_rotation: bool) -> list[Bin]:
-    """
-    Iteratively try to eliminate the last bin:
-    1. Deep-copy the earlier bins so failure leaves them untouched.
-    2. Re-insert each item from the last bin into the copies using BFD order.
-    3. If all items fit → commit (drop last bin) and repeat.
-    4. Otherwise → stop.
-
-    Items from the last bin are tried heaviest-first to improve fit chances.
-    """
+    """Iteratively eliminate the last bin by redistributing its items."""
     while len(bins) > 1:
         last_items = sorted(
             (p.item for p in bins[-1].placed),
@@ -243,7 +234,6 @@ def _local_search(bins: list[Bin], allow_rotation: bool) -> list[Bin]:
 
         all_placed = True
         for item in last_items:
-            # BFD within the trial bins
             best_b:  Optional[Bin]        = None
             best_pi: Optional[PlacedItem] = None
             best_rv: float                = math.inf
@@ -261,45 +251,34 @@ def _local_search(bins: list[Bin], allow_rotation: bool) -> list[Bin]:
                 break
 
         if all_placed:
-            bins = trial          # commit: last bin eliminated
+            bins = trial
         else:
-            break                 # no further improvement possible
+            break
 
     return bins
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
-def pack(items: list[Item], allow_rotation: bool = True) -> PackResult:
+def pack(
+    items: list[Item],
+    allow_rotation: bool = True,
+    container_spec: Optional[ContainerSpec] = None,
+) -> PackResult:
     """
-    Determine the minimum number of 20GP containers required to load all items.
-
-    Parameters
-    ----------
-    items : list of Item
-        The complete cargo manifest (one entry per physical unit).
-    allow_rotation : bool
-        Whether items may be rotated 90° horizontally (length ↔ width).
-
-    Returns
-    -------
-    PackResult
-        .bins          — list of Bin objects, each fully described
-        .unplaced      — items that could not be packed (e.g. item too tall)
-        .lower_bound   — theoretical minimum container count
-        .stats         — summary dict for reporting
+    Determine the minimum number of containers (of the given type) required
+    to load all items.
     """
     if not items:
         return PackResult(bins=[], unplaced=[], lower_bound=0, stats={})
 
-    # Phase 1: sort — heaviest first, volume as tiebreaker
+    spec         = container_spec or DEFAULT_20GP
     sorted_items = sorted(items, key=lambda i: (-i.weight, -i.volume))
-    lb           = compute_lower_bound(sorted_items)
+    lb           = compute_lower_bound(sorted_items, spec)
 
     bins:     list[Bin]  = []
     unplaced: list[Item] = []
 
-    # Phase 2: BFD greedy
     for item in sorted_items:
         best_b:  Optional[Bin]        = None
         best_pi: Optional[PlacedItem] = None
@@ -314,29 +293,26 @@ def pack(items: list[Item], allow_rotation: bool = True) -> PackResult:
             best_b.placed.append(best_pi)
             _update_eps(best_b, best_pi)
         else:
-            # Open a fresh container
-            new_bin = Bin()
+            new_bin = Bin(L=spec.L, W=spec.W, H=spec.H, spec_name=spec.name)
             pi = _try_place(item, new_bin, allow_rotation)
             if pi is not None:
                 new_bin.placed.append(pi)
                 _update_eps(new_bin, pi)
                 bins.append(new_bin)
             else:
-                unplaced.append(item)   # item is physically impossible to fit
+                unplaced.append(item)
 
-    # Phase 3: local search
     bins = _local_search(bins, allow_rotation)
 
-    # Stats
-    cv          = CONTAINER_L * CONTAINER_W * CONTAINER_H
-    total_vol   = sum(i.volume for i in items)
-    total_kg    = sum(i.weight for i in items)
-    n_bins      = len(bins)
+    cv        = spec.L * spec.W * spec.H
+    total_vol = sum(i.volume for i in items)
+    total_kg  = sum(i.weight for i in items)
+    n_bins    = len(bins)
 
     stats = {
         "num_containers":   n_bins,
         "lower_bound":      lb,
-        "gap":              n_bins - lb,        # 0 → proven optimal
+        "gap":              n_bins - lb,
         "total_weight_kg":  round(total_kg, 2),
         "volume_util_pct":  round(total_vol / (n_bins * cv) * 100, 2) if n_bins else 0.0,
         "unplaced_count":   len(unplaced),
@@ -344,3 +320,40 @@ def pack(items: list[Item], allow_rotation: bool = True) -> PackResult:
     }
 
     return PackResult(bins=bins, unplaced=unplaced, lower_bound=lb, stats=stats)
+
+
+def pack_best_cost(
+    items: list[Item],
+    container_specs: list[ContainerSpec],
+    allow_rotation: bool = True,
+) -> tuple[PackResult, list[dict]]:
+    """
+    Run pack() for each container spec; return the result with minimum total
+    cost together with a full comparison list.
+
+    When costs are equal, prefer the result with fewer bins.
+    When container_specs is empty, falls back to DEFAULT_20GP.
+    """
+    if not container_specs:
+        container_specs = [DEFAULT_20GP]
+
+    comparison:  list[dict]            = []
+    best_result: Optional[PackResult]  = None
+    best_cost:   float                 = math.inf
+    best_bins:   int                   = math.inf  # type: ignore[assignment]
+
+    for spec in container_specs:
+        result     = pack(items, allow_rotation=allow_rotation, container_spec=spec)
+        total_cost = len(result.bins) * spec.cost_usd
+        comparison.append({
+            "type_name":  spec.name,
+            "num_bins":   len(result.bins),
+            "total_cost": round(total_cost, 2),
+        })
+        n = len(result.bins)
+        if best_result is None or (total_cost, n) < (best_cost, best_bins):
+            best_cost   = total_cost
+            best_bins   = n
+            best_result = result
+
+    return best_result, comparison  # type: ignore[return-value]

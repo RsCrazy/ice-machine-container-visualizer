@@ -6,13 +6,15 @@ import CargoList from './CargoList'
 import StatsPanel from './StatsPanel'
 import ItemForm from './ItemForm'
 import TypeManager from './TypeManager'
+import ContainerManager from './ContainerManager'
 import UploadPanel from '../Upload/UploadPanel'
 
-type Tab = 'cargo' | 'types'
+type Tab = 'cargo' | 'types' | 'containers'
 
 export default function LeftPanel() {
   const {
     items, allowRotation, packResult,
+    containerTypes, selectedContainerIds,
     setPackResult, setAllowRotation, setLoading, setError,
     isLoading, error, reset, setItems,
   } = useAppStore()
@@ -20,12 +22,16 @@ export default function LeftPanel() {
   const [showForm, setShowForm] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
 
+  const selectedContainers = containerTypes.filter((c) =>
+    selectedContainerIds.includes(c.id)
+  )
+
   const handlePack = async () => {
     if (items.length === 0) return
     setLoading(true)
     setError(null)
     try {
-      const result = await packItems(items, allowRotation)
+      const result = await packItems(items, allowRotation, selectedContainers)
       setPackResult(result)
     } catch (e) {
       setError(e instanceof Error ? e.message : '请求失败')
@@ -44,6 +50,12 @@ export default function LeftPanel() {
     }
   }
 
+  const TABS: [Tab, string][] = [
+    ['cargo',      '货物清单'],
+    ['types',      '类型库'],
+    ['containers', '集装箱'],
+  ]
+
   return (
     <aside className="w-[272px] min-w-[272px] bg-[#161616] border-r border-[#2a2a2a] flex flex-col overflow-hidden">
       {/* ── Header ── */}
@@ -54,11 +66,11 @@ export default function LeftPanel() {
 
       {/* ── Tab bar ── */}
       <div className="flex border-b border-[#2a2a2a] flex-shrink-0">
-        {([['cargo', '货物清单'], ['types', '类型库']] as [Tab, string][]).map(([key, label]) => (
+        {TABS.map(([key, label]) => (
           <button
             key={key}
             onClick={() => { setTab(key); setShowForm(false) }}
-            className={`flex-1 py-2 text-xs font-medium transition-colors ${
+            className={`flex-1 py-2 text-[11px] font-medium transition-colors ${
               tab === key
                 ? 'text-[#c9a96e] border-b border-[#c9a96e]'
                 : 'text-[#444] hover:text-[#666]'
@@ -72,7 +84,6 @@ export default function LeftPanel() {
       {/* ── Cargo tab ── */}
       {tab === 'cargo' && (
         <>
-          {/* Sub-header */}
           <div className="text-[10px] uppercase tracking-widest text-[#444] px-4 pt-3 pb-1 flex items-center justify-between flex-shrink-0">
             <span>{items.length} 件</span>
             {!packResult && (
@@ -108,6 +119,18 @@ export default function LeftPanel() {
               </div>
               <span className="text-xs text-[#555]">允许水平旋转 90°</span>
             </label>
+
+            {/* Container selection hint */}
+            {!packResult && (
+              <div className="text-[10px] text-[#444]">
+                容器：
+                <span className="text-[#666]">
+                  {selectedContainers.length === 0
+                    ? '未选择（将使用 20GP）'
+                    : selectedContainers.map((c) => c.name).join(' / ')}
+                </span>
+              </div>
+            )}
 
             {!packResult ? (
               <>
@@ -162,6 +185,16 @@ export default function LeftPanel() {
             已保存类型（本地）
           </div>
           <TypeManager />
+        </>
+      )}
+
+      {/* ── Containers tab ── */}
+      {tab === 'containers' && (
+        <>
+          <div className="text-[10px] uppercase tracking-widest text-[#444] px-4 pt-3 pb-1 flex-shrink-0">
+            集装箱库（本地）
+          </div>
+          <ContainerManager />
         </>
       )}
     </aside>

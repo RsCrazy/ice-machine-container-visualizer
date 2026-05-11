@@ -19,13 +19,16 @@ export default function RightPanel() {
             placed={bin.placed}
             layerHeight={layerHeight}
             highlightedItem={highlightedItem}
+            containerL={bin.container_l}
+            containerW={bin.container_w}
+            containerH={bin.container_h}
           />
 
           {/* Dimension legend */}
           <div className="px-3 pb-3 text-[10px] text-[#3a3a3a] space-y-0.5">
-            <div>X 轴（长）: 5898 mm</div>
-            <div>Z 轴（宽）: 2352 mm</div>
-            <div>Y 轴（高）: 2393 mm</div>
+            <div>X 轴（长）: {bin.container_l} mm</div>
+            <div>Z 轴（宽）: {bin.container_w} mm</div>
+            <div>Y 轴（高）: {bin.container_h} mm</div>
           </div>
         </div>
       ) : (

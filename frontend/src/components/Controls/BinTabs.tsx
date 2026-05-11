@@ -8,7 +8,6 @@ export default function BinTabs() {
   const origin   = useRef({ x: 0, sl: 0 })
   const [arrows, setArrows] = useState({ l: false, r: false })
 
-  // Sync arrow visibility based on current scroll position
   const syncArrows = useCallback(() => {
     const el = listRef.current
     if (!el) return
@@ -18,7 +17,6 @@ export default function BinTabs() {
     })
   }, [])
 
-  // Non-passive wheel → horizontal scroll
   useEffect(() => {
     const el = listRef.current
     if (!el) return
@@ -31,7 +29,6 @@ export default function BinTabs() {
     return () => el.removeEventListener('wheel', handler)
   }, [syncArrows])
 
-  // Scroll active tab into view when activeBin changes
   useEffect(() => {
     const el = listRef.current
     if (!el) return
@@ -40,13 +37,10 @@ export default function BinTabs() {
     setTimeout(syncArrows, 350)
   }, [activeBin, syncArrows])
 
-  // Re-check arrows when bin count changes
   useEffect(() => { syncArrows() }, [packResult?.bins.length, syncArrows])
 
-  // ── Early return (after all hooks) ──────────────────────────────────────────
   if (!packResult || packResult.bins.length <= 1) return null
 
-  // ── Drag-to-scroll handlers ─────────────────────────────────────────────────
   const onMouseDown = (e: React.MouseEvent) => {
     dragging.current = true
     origin.current = { x: e.clientX, sl: listRef.current?.scrollLeft ?? 0 }
@@ -74,19 +68,15 @@ export default function BinTabs() {
         集装箱
       </span>
 
-      {/* Left arrow */}
       <button
         onClick={() => nudge(-1)}
         className={`flex-shrink-0 w-5 h-5 flex items-center justify-center text-lg leading-none rounded transition-colors ${
-          arrows.l
-            ? 'text-[#555] hover:text-[#c9a96e]'
-            : 'text-[#252525] pointer-events-none'
+          arrows.l ? 'text-[#555] hover:text-[#c9a96e]' : 'text-[#252525] pointer-events-none'
         }`}
       >
         ‹
       </button>
 
-      {/* Scrollable tab strip */}
       <div
         ref={listRef}
         className="flex items-center gap-1.5 flex-1 overflow-x-auto cursor-grab active:cursor-grabbing"
@@ -94,7 +84,7 @@ export default function BinTabs() {
         onScroll={syncArrows}
         onMouseDown={onMouseDown}
       >
-        {packResult.bins.map((_, i) => (
+        {packResult.bins.map((b, i) => (
           <button
             key={i}
             data-idx={i}
@@ -105,18 +95,15 @@ export default function BinTabs() {
                 : 'text-[#666] border border-[#2a2a2a] hover:border-[#3a3a3a] hover:text-[#999]'
             }`}
           >
-            箱 {i + 1}
+            {b.container_type} #{i + 1}
           </button>
         ))}
       </div>
 
-      {/* Right arrow */}
       <button
         onClick={() => nudge(1)}
         className={`flex-shrink-0 w-5 h-5 flex items-center justify-center text-lg leading-none rounded transition-colors ${
-          arrows.r
-            ? 'text-[#555] hover:text-[#c9a96e]'
-            : 'text-[#252525] pointer-events-none'
+          arrows.r ? 'text-[#555] hover:text-[#c9a96e]' : 'text-[#252525] pointer-events-none'
         }`}
       >
         ›

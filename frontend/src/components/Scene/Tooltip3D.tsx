@@ -9,6 +9,14 @@ interface Props {
   y: number
 }
 
+const ROTATION_LABELS: Record<number, string> = {
+  1: '↻ 水平旋转 90°',
+  2: '↕ 侧放（原宽 W 朝上）',
+  3: '↕ 侧放 90°（原宽 W 朝上）',
+  4: '↕ 侧放（原长 L 朝上）',
+  5: '↕ 侧放 90°（原长 L 朝上）',
+}
+
 export default function Tooltip3D({ item, order, x, y }: Props) {
   const ref = useRef<HTMLDivElement>(null)
 
@@ -25,7 +33,8 @@ export default function Tooltip3D({ item, order, x, y }: Props) {
 
   if (!item) return null
 
-  const color = modelColor(item.model)
+  const color    = modelColor(item.model)
+  const rotLabel = ROTATION_LABELS[item.rotation]
 
   return (
     <div
@@ -54,8 +63,8 @@ export default function Tooltip3D({ item, order, x, y }: Props) {
           <span className="text-[#555]">装载序</span>
           <span className="text-[#c9a96e]">#{order}</span>
         </div>
-        {item.rotation === 90 && (
-          <div className="text-[#a47fe8] pt-0.5">↻ 已旋转 90°</div>
+        {rotLabel && (
+          <div className="text-[#a47fe8] pt-0.5">{rotLabel}</div>
         )}
       </div>
     </div>
