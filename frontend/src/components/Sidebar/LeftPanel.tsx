@@ -137,10 +137,10 @@ export default function LeftPanel() {
                 ))}
               </div>
               <div className="text-[10px] text-[#444]">
-                {solveMode === 'fast'          && '单次贪心，<100ms'}
-                {solveMode === 'multi_restart' && 'n≤100 随机重启×30，约 1-3s'}
-                {solveMode === 'optimized'     && 'n≤100 模拟退火，每类型≤10s'}
-                {solveMode === 'exact'         && '前瞻剪枝穷举，每类型≤30s'}
+                {solveMode === 'fast'          && '单次贪心'}
+                {solveMode === 'multi_restart' && '随机重启 ×30'}
+                {solveMode === 'optimized'     && '模拟退火，每类型≤10s'}
+                {solveMode === 'exact'         && '前瞻剪枝穷举搜索，无时间限制'}
               </div>
             </div>
 

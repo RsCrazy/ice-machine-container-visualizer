@@ -445,7 +445,6 @@ def branch_and_bound_pack(
     items: list[Item],
     allow_rotation: bool = True,
     container_spec: Optional[ContainerSpec] = None,
-    time_limit: float = 30.0,
 ) -> PackResult:
     """
     Guided exhaustive search over item permutations with look-ahead pruning.
@@ -458,17 +457,14 @@ def branch_and_bound_pack(
 
     Starts from the canonical weight-DESC ordering (same as greedy), so the
     result is always at least as good as a single greedy pass.
-
-    For n ≤ 10 typically finds the true optimum; for n up to 15 finds
-    near-optimal solutions within time_limit. Not mathematically guaranteed
-    complete because the look-ahead uses a heuristic evaluator.
+    Runs to completion with no time limit; terminates early when volume lower
+    bound is reached.
     """
     if not items:
         return PackResult(bins=[], unplaced=[], lower_bound=0, stats={})
 
     spec = container_spec or DEFAULT_20GP
     lb   = compute_lower_bound(items, spec)
-    t0   = time.perf_counter()
 
     canonical = sorted(items, key=lambda x: (-x.weight, -x.volume))
     best      = [_pack_sorted(canonical, allow_rotation, spec)]
@@ -478,7 +474,7 @@ def branch_and_bound_pack(
         return best[0]
 
     def dfs(prefix: list[Item], remaining: list[Item]) -> None:
-        if time.perf_counter() - t0 >= time_limit or best_n[0] <= lb:
+        if best_n[0] <= lb:
             return
 
         if not remaining:
@@ -491,7 +487,7 @@ def branch_and_bound_pack(
 
         seen: set[tuple[int, int, int, int]] = set()
         for i, itm in enumerate(remaining):
-            if time.perf_counter() - t0 >= time_limit or best_n[0] <= lb:
+            if best_n[0] <= lb:
                 break
 
             # Deduplicate: identical items are interchangeable
@@ -535,12 +531,11 @@ def pack_best_cost(
     if not container_specs:
         container_specs = [DEFAULT_20GP]
 
-    n = len(items)
-    if solve_mode == "multi_restart" and 0 < n <= 100:
+    if solve_mode == "multi_restart":
         actual_mode = "multi_restart_k30"
-    elif solve_mode == "optimized" and 0 < n <= 100:
+    elif solve_mode == "optimized":
         actual_mode = "simulated_annealing"
-    elif solve_mode == "exact" and n > 0:
+    elif solve_mode == "exact":
         actual_mode = "branch_and_bound"
     else:
         actual_mode = "fast"
