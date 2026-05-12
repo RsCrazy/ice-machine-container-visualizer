@@ -209,17 +209,18 @@ def compute_lower_bound(
     container_spec: Optional[ContainerSpec] = None,
 ) -> int:
     """
-    Return max(volume lower bound, footprint lower bound) for the given spec.
-    Footprint uses per-item minimum face area when free rotation is enabled.
+    Volume lower bound: ceil(total_item_volume / container_volume).
+
+    A footprint-based lower bound would be invalid here because items can be
+    stacked — multiple items share the same floor area via stacking, so
+    sum(footprints) / floor_area overcounts the required containers.
     """
     if not items:
         return 0
-    spec = container_spec or DEFAULT_20GP
-    cv = spec.L * spec.W * spec.H
-    ca = spec.L * spec.W
-    lb_vol  = math.ceil(sum(i.volume    for i in items) / cv)
-    lb_area = math.ceil(sum(i.footprint for i in items) / ca)
-    return max(lb_vol, lb_area, 1)
+    spec   = container_spec or DEFAULT_20GP
+    cv     = spec.L * spec.W * spec.H
+    lb_vol = math.ceil(sum(i.volume for i in items) / cv)
+    return max(lb_vol, 1)
 
 
 # ── Local search ──────────────────────────────────────────────────────────────

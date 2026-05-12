@@ -43,12 +43,13 @@ class TestLowerBound:
         big = item("a", CONTAINER_L, CONTAINER_W, CONTAINER_H * 0.65, 100)
         assert compute_lower_bound([big, big]) >= 2
 
-    def test_footprint_forces_two_containers(self):
-        # Many items whose total floor area exceeds one container floor
-        single_area = CONTAINER_L * CONTAINER_W
-        # Each item takes 60% of the floor
-        it = item("a", CONTAINER_L * 0.8, CONTAINER_W * 0.8, 100, 10)
-        # Two such items: 2 × 0.64 = 1.28 > 1 → needs 2
+    def test_volume_forces_two_containers(self):
+        # Two items each filling ~60% of container volume → needs 2 containers
+        cv = CONTAINER_L * CONTAINER_W * CONTAINER_H
+        # Each item occupies ~60% of container volume
+        it = item("a", CONTAINER_L * 0.8, CONTAINER_W * 0.8, CONTAINER_H * 0.9375, 10)
+        assert it.volume > 0.5 * cv  # verify > 50% each
+        # Two such items: total > 100% → lb ≥ 2
         assert compute_lower_bound([it, it]) >= 2
 
     def test_lb_never_exceeds_item_count(self):
