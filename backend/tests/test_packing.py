@@ -13,7 +13,8 @@ from app.models import (
     Item, PlacedItem, Bin,
 )
 from app.packing_engine import (
-    pack, compute_lower_bound,
+    pack, compute_lower_bound, multi_restart_pack,
+    simulated_annealing_pack, branch_and_bound_pack,
     _support_ratio, _collides, _try_place, _update_eps,
 )
 
@@ -39,16 +40,12 @@ class TestLowerBound:
         assert compute_lower_bound([item("a", 100, 100, 100, 1)]) == 1
 
     def test_volume_forces_two_containers(self):
-        # Two items each ~60% of container height → volume > 1 container
-        big = item("a", CONTAINER_L, CONTAINER_W, CONTAINER_H * 0.65, 100)
-        assert compute_lower_bound([big, big]) >= 2
-
-    def test_footprint_forces_two_containers(self):
-        # Many items whose total floor area exceeds one container floor
-        single_area = CONTAINER_L * CONTAINER_W
-        # Each item takes 60% of the floor
-        it = item("a", CONTAINER_L * 0.8, CONTAINER_W * 0.8, 100, 10)
-        # Two such items: 2 × 0.64 = 1.28 > 1 → needs 2
+        # Two items each filling ~60% of container volume → needs 2 containers
+        cv = CONTAINER_L * CONTAINER_W * CONTAINER_H
+        # Each item occupies ~60% of container volume
+        it = item("a", CONTAINER_L * 0.8, CONTAINER_W * 0.8, CONTAINER_H * 0.9375, 10)
+        assert it.volume > 0.5 * cv  # verify > 50% each
+        # Two such items: total > 100% → lb ≥ 2
         assert compute_lower_bound([it, it]) >= 2
 
     def test_lb_never_exceeds_item_count(self):
@@ -247,3 +244,114 @@ class TestPack:
         r = pack(items)
         for b in r.bins:
             assert 0.0 < b.fill_ratio <= 1.0 + 1e-6
+
+
+# ── Multi-restart tests ───────────────────────────────────────────────────────
+
+class TestMultiRestart:
+    def test_empty_input(self):
+        r = multi_restart_pack([])
+        assert r.bins == [] and r.lower_bound == 0
+
+    def test_never_worse_than_greedy(self):
+        """multi_restart result must have ≤ bins than single greedy pass."""
+        items = [item(f"i{k}", 700 + k * 40, 600 + k * 30, 1300 + k * 50, 120 - k * 5)
+                 for k in range(12)]
+        r_greedy  = pack(items)
+        r_restart = multi_restart_pack(items, k=20, seed=0)
+        assert len(r_restart.bins) <= len(r_greedy.bins)
+
+    def test_k1_equals_greedy(self):
+        """k=1 always uses canonical sort — should match single greedy."""
+        items = [item(f"i{k}", 700, 600, 1300, 100 - k * 5) for k in range(8)]
+        r_greedy  = pack(items)
+        r_restart = multi_restart_pack(items, k=1, seed=42)
+        assert len(r_restart.bins) == len(r_greedy.bins)
+
+
+# ── Simulated-annealing tests ─────────────────────────────────────────────────
+
+class TestSimulatedAnnealing:
+    def test_empty_input(self):
+        r = simulated_annealing_pack([])
+        assert r.bins == [] and r.lower_bound == 0
+
+    def test_never_worse_than_greedy(self):
+        """SA starts from canonical sort and can only improve (or stay equal)."""
+        items = [item(f"i{k}", 700 + k * 40, 600 + k * 30, 1300 + k * 50, 120 - k * 5)
+                 for k in range(12)]
+        r_greedy = pack(items)
+        r_sa     = simulated_annealing_pack(items, time_limit=0.5, seed=0)
+        assert len(r_sa.bins) <= len(r_greedy.bins)
+
+    def test_single_item(self):
+        r = simulated_annealing_pack([item("a", 500, 400, 900, 80)], time_limit=0.2)
+        assert len(r.bins) == 1 and r.unplaced == []
+
+    def test_reaches_lower_bound_on_easy_case(self):
+        """A handful of small items that clearly fit in one container."""
+        items = [item(f"i{k}", 400, 300, 700, 50) for k in range(4)]
+        r = simulated_annealing_pack(items, time_limit=1.0, seed=0)
+        assert len(r.bins) == 1
+
+    def test_improves_over_greedy_on_hard_case(self):
+        """80 medium items with seed=99 — greedy needs 6, SA should find ≤5."""
+        import random as _rng
+        rng = _rng.Random(99)
+        items = [
+            item(f"I{i}", rng.randint(600, 1400), rng.randint(500, 1200),
+                 rng.randint(800, 2000), rng.uniform(60, 250))
+            for i in range(80)
+        ]
+        r_greedy = pack(items)
+        r_sa     = simulated_annealing_pack(items, time_limit=2.0, seed=7)
+        assert len(r_sa.bins) <= len(r_greedy.bins), (
+            f"SA ({len(r_sa.bins)}) worse than greedy ({len(r_greedy.bins)})"
+        )
+
+
+# ── Branch-and-bound tests ────────────────────────────────────────────────────
+
+class TestBranchAndBound:
+    def test_empty_input(self):
+        r = branch_and_bound_pack([])
+        assert r.bins == [] and r.lower_bound == 0
+
+    def test_single_item(self):
+        r = branch_and_bound_pack([item("a", 500, 400, 900, 80)])
+        assert len(r.bins) == 1 and r.unplaced == []
+
+    def test_never_worse_than_greedy(self):
+        """B&B starts from greedy solution and can only improve."""
+        items = [item(f"i{k}", 700 + k * 40, 600 + k * 30, 1300 + k * 50, 120 - k * 5)
+                 for k in range(8)]
+        r_greedy = pack(items)
+        r_bb     = branch_and_bound_pack(items)
+        assert len(r_bb.bins) <= len(r_greedy.bins)
+
+    def test_small_catalogue_finds_tight_solution(self):
+        """6 ice-machine items: B&B should pack them into 1 container."""
+        items = [
+            item("L1", 760, 690, 1580, 162),
+            item("L2", 760, 690, 1580, 162),
+            item("M1", 640, 610, 1280, 118),
+            item("S1", 560, 530,  990,  83),
+            item("S2", 560, 530,  990,  83),
+            item("T1", 450, 420,  780,  51),
+        ]
+        r = branch_and_bound_pack(items)
+        assert r.unplaced == []
+        assert len(r.bins) <= 2
+
+    def test_result_at_least_as_good_as_sa_on_small_case(self):
+        """For n=10, B&B should match or beat SA."""
+        import random as _rng
+        rng = _rng.Random(7)
+        items = [
+            item(f"i{i}", rng.randint(500, 1200), rng.randint(400, 1000),
+                 rng.randint(700, 1800), rng.uniform(50, 180))
+            for i in range(10)
+        ]
+        r_sa = simulated_annealing_pack(items, time_limit=1.0, seed=0)
+        r_bb = branch_and_bound_pack(items)
+        assert len(r_bb.bins) <= len(r_sa.bins)

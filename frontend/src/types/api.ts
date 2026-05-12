@@ -84,6 +84,8 @@ export interface PackResponse {
   lower_bound: number
   stats: PackStats
   cost_comparison: CostComparisonItem[]
+  solve_time_ms?: number
+  solve_mode_used?: string
 }
 
 export interface ImportPreview {

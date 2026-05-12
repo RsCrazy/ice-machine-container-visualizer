@@ -32,6 +32,9 @@ from __future__ import annotations
 
 import copy
 import math
+import random
+import threading
+import time
 from typing import Optional
 
 from .models import (
@@ -208,17 +211,18 @@ def compute_lower_bound(
     container_spec: Optional[ContainerSpec] = None,
 ) -> int:
     """
-    Return max(volume lower bound, footprint lower bound) for the given spec.
-    Footprint uses per-item minimum face area when free rotation is enabled.
+    Volume lower bound: ceil(total_item_volume / container_volume).
+
+    A footprint-based lower bound would be invalid here because items can be
+    stacked — multiple items share the same floor area via stacking, so
+    sum(footprints) / floor_area overcounts the required containers.
     """
     if not items:
         return 0
-    spec = container_spec or DEFAULT_20GP
-    cv = spec.L * spec.W * spec.H
-    ca = spec.L * spec.W
-    lb_vol  = math.ceil(sum(i.volume    for i in items) / cv)
-    lb_area = math.ceil(sum(i.footprint for i in items) / ca)
-    return max(lb_vol, lb_area, 1)
+    spec   = container_spec or DEFAULT_20GP
+    cv     = spec.L * spec.W * spec.H
+    lb_vol = math.ceil(sum(i.volume for i in items) / cv)
+    return max(lb_vol, 1)
 
 
 # ── Local search ──────────────────────────────────────────────────────────────
@@ -260,22 +264,13 @@ def _local_search(bins: list[Bin], allow_rotation: bool) -> list[Bin]:
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
-def pack(
-    items: list[Item],
-    allow_rotation: bool = True,
-    container_spec: Optional[ContainerSpec] = None,
+def _pack_sorted(
+    sorted_items: list[Item],
+    allow_rotation: bool,
+    spec: ContainerSpec,
 ) -> PackResult:
-    """
-    Determine the minimum number of containers (of the given type) required
-    to load all items.
-    """
-    if not items:
-        return PackResult(bins=[], unplaced=[], lower_bound=0, stats={})
-
-    spec         = container_spec or DEFAULT_20GP
-    sorted_items = sorted(items, key=lambda i: (-i.weight, -i.volume))
-    lb           = compute_lower_bound(sorted_items, spec)
-
+    """BFD + EP + local search on a pre-ordered item list (no internal re-sort)."""
+    lb        = compute_lower_bound(sorted_items, spec)
     bins:     list[Bin]  = []
     unplaced: list[Item] = []
 
@@ -305,8 +300,8 @@ def pack(
     bins = _local_search(bins, allow_rotation)
 
     cv        = spec.L * spec.W * spec.H
-    total_vol = sum(i.volume for i in items)
-    total_kg  = sum(i.weight for i in items)
+    total_vol = sum(i.volume for i in sorted_items)
+    total_kg  = sum(i.weight for i in sorted_items)
     n_bins    = len(bins)
 
     stats = {
@@ -318,42 +313,277 @@ def pack(
         "unplaced_count":   len(unplaced),
         "items_packed":     sum(len(b.placed) for b in bins),
     }
-
     return PackResult(bins=bins, unplaced=unplaced, lower_bound=lb, stats=stats)
+
+
+def pack(
+    items: list[Item],
+    allow_rotation: bool = True,
+    container_spec: Optional[ContainerSpec] = None,
+) -> PackResult:
+    """Single-pass BFD greedy with canonical weight-DESC ordering."""
+    if not items:
+        return PackResult(bins=[], unplaced=[], lower_bound=0, stats={})
+    spec = container_spec or DEFAULT_20GP
+    return _pack_sorted(sorted(items, key=lambda i: (-i.weight, -i.volume)), allow_rotation, spec)
+
+
+def multi_restart_pack(
+    items: list[Item],
+    allow_rotation: bool = True,
+    container_spec: Optional[ContainerSpec] = None,
+    k: int = 30,
+    seed: Optional[int] = None,
+    cancel: Optional[threading.Event] = None,
+) -> PackResult:
+    """
+    Run BFD packing k times with different item orderings; return the result
+    with fewest bins. Restart 0 uses canonical weight-DESC ordering so the
+    result is always at least as good as a single greedy pass.
+    """
+    if not items:
+        return PackResult(bins=[], unplaced=[], lower_bound=0, stats={})
+
+    spec = container_spec or DEFAULT_20GP
+    lb   = compute_lower_bound(items, spec)
+    rng  = random.Random(seed)
+    best: Optional[PackResult] = None
+
+    for i in range(k):
+        if cancel is not None and cancel.is_set():
+            break
+
+        if i == 0:
+            order: list[Item] = sorted(items, key=lambda x: (-x.weight, -x.volume))
+        else:
+            order = items[:]
+            rng.shuffle(order)
+
+        result = _pack_sorted(order, allow_rotation, spec)
+
+        if best is None or len(result.bins) < len(best.bins):
+            best = result
+
+        if len(best.bins) <= lb:
+            break
+
+    return best  # type: ignore[return-value]
+
+
+def simulated_annealing_pack(
+    items: list[Item],
+    allow_rotation: bool = True,
+    container_spec: Optional[ContainerSpec] = None,
+    time_limit: float = 10.0,
+    seed: Optional[int] = None,
+    cancel: Optional[threading.Event] = None,
+) -> PackResult:
+    """
+    Simulated annealing over item permutations.
+
+    Initial state : canonical weight-DESC ordering (same as greedy).
+    Moves         : random swap (50%) or random insertion (50%).
+    Temperature   : exponential decay T0=1.5 → Tmin=0.001 over time_limit,
+                    so the algorithm explores broadly early and converges late.
+    Termination   : time_limit exceeded or volume lower bound reached.
+    Result        : always ≥ as good as single greedy pass.
+    """
+    if not items:
+        return PackResult(bins=[], unplaced=[], lower_bound=0, stats={})
+
+    spec = container_spec or DEFAULT_20GP
+    lb   = compute_lower_bound(items, spec)
+    rng  = random.Random(seed)
+    n    = len(items)
+
+    current     = sorted(items, key=lambda x: (-x.weight, -x.volume))
+    cur_result  = _pack_sorted(current, allow_rotation, spec)
+    cur_bins    = len(cur_result.bins)
+    best_result = cur_result
+    best_bins   = cur_bins
+
+    if best_bins <= lb:
+        return best_result
+
+    T0        = 1.5
+    T_min     = 0.001
+    log_ratio = math.log(T_min / T0)   # negative
+    t_start   = time.perf_counter()
+
+    while True:
+        elapsed = time.perf_counter() - t_start
+        if elapsed >= time_limit:
+            break
+        if cancel is not None and cancel.is_set():
+            break
+
+        T        = T0 * math.exp(log_ratio * (elapsed / time_limit))
+        neighbor = current[:]
+
+        if rng.random() < 0.5:
+            # Swap two random positions
+            i, j = rng.sample(range(n), 2)
+            neighbor[i], neighbor[j] = neighbor[j], neighbor[i]
+        else:
+            # Remove item at i, re-insert at j
+            i     = rng.randrange(n)
+            j     = rng.randrange(n - 1)
+            moved = neighbor.pop(i)
+            neighbor.insert(j, moved)
+
+        result   = _pack_sorted(neighbor, allow_rotation, spec)
+        new_bins = len(result.bins)
+        delta    = new_bins - cur_bins
+
+        if delta <= 0 or rng.random() < math.exp(-delta / T):
+            current    = neighbor
+            cur_bins   = new_bins
+            cur_result = result
+
+            if new_bins < best_bins:
+                best_bins   = new_bins
+                best_result = result
+                if best_bins <= lb:
+                    break
+
+    return best_result
+
+
+def branch_and_bound_pack(
+    items: list[Item],
+    allow_rotation: bool = True,
+    container_spec: Optional[ContainerSpec] = None,
+    cancel: Optional[threading.Event] = None,
+) -> PackResult:
+    """
+    Guided exhaustive search over item permutations with look-ahead pruning.
+
+    At each node (prefix, remaining):
+      - Evaluate _pack_sorted(prefix + sorted(remaining)) as a look-ahead.
+      - If the result >= best_known bins, this prefix cannot improve → prune.
+      - Items with identical (length, width, height, weight) are deduplicated
+        to skip symmetrically equivalent branches.
+
+    Starts from the canonical weight-DESC ordering (same as greedy), so the
+    result is always at least as good as a single greedy pass.
+    Runs to completion with no time limit; terminates early when volume lower
+    bound is reached.
+    """
+    if not items:
+        return PackResult(bins=[], unplaced=[], lower_bound=0, stats={})
+
+    spec = container_spec or DEFAULT_20GP
+    lb   = compute_lower_bound(items, spec)
+
+    canonical = sorted(items, key=lambda x: (-x.weight, -x.volume))
+    best      = [_pack_sorted(canonical, allow_rotation, spec)]
+    best_n    = [len(best[0].bins)]
+
+    if best_n[0] <= lb:
+        return best[0]
+
+    def dfs(prefix: list[Item], remaining: list[Item]) -> None:
+        if best_n[0] <= lb:
+            return
+        if cancel is not None and cancel.is_set():
+            return
+
+        if not remaining:
+            result = _pack_sorted(prefix, allow_rotation, spec)
+            nb = len(result.bins)
+            if nb < best_n[0]:
+                best_n[0] = nb
+                best[0]   = result
+            return
+
+        seen: set[tuple[int, int, int, int]] = set()
+        for i, itm in enumerate(remaining):
+            if best_n[0] <= lb:
+                break
+            if cancel is not None and cancel.is_set():
+                break
+
+            # Deduplicate: identical items are interchangeable
+            key = (round(itm.length), round(itm.width),
+                   round(itm.height), round(itm.weight))
+            if key in seen:
+                continue
+            seen.add(key)
+
+            new_prefix    = prefix + [itm]
+            new_remaining = remaining[:i] + remaining[i+1:]
+
+            # Look-ahead: evaluate this prefix with remaining in canonical order
+            lookahead = new_prefix + sorted(
+                new_remaining, key=lambda x: (-x.weight, -x.volume)
+            )
+            if len(_pack_sorted(lookahead, allow_rotation, spec).bins) > best_n[0]:
+                continue  # strictly worse than current best → prune
+
+            dfs(new_prefix, new_remaining)
+
+    dfs([], canonical)
+    return best[0]
 
 
 def pack_best_cost(
     items: list[Item],
     container_specs: list[ContainerSpec],
     allow_rotation: bool = True,
-) -> tuple[PackResult, list[dict]]:
+    solve_mode: str = "fast",
+    cancel: Optional[threading.Event] = None,
+) -> tuple[PackResult, list[dict], str]:
     """
-    Run pack() for each container spec; return the result with minimum total
-    cost together with a full comparison list.
+    Run packing for each container spec; return (best_result, comparison, actual_mode).
 
+    solve_mode="multi_restart": multi_restart_pack (k=30) for n≤100, else fast.
+    solve_mode="optimized":    simulated_annealing_pack for n≤100, else fast.
+    solve_mode="exact":        branch_and_bound_pack for n≤15, SA fallback for n≤100, else fast.
     When costs are equal, prefer the result with fewer bins.
     When container_specs is empty, falls back to DEFAULT_20GP.
     """
     if not container_specs:
         container_specs = [DEFAULT_20GP]
 
-    comparison:  list[dict]            = []
-    best_result: Optional[PackResult]  = None
-    best_cost:   float                 = math.inf
-    best_bins:   int                   = math.inf  # type: ignore[assignment]
+    if solve_mode == "multi_restart":
+        actual_mode = "multi_restart_k30"
+    elif solve_mode == "optimized":
+        actual_mode = "simulated_annealing"
+    elif solve_mode == "exact":
+        actual_mode = "branch_and_bound"
+    else:
+        actual_mode = "fast"
+
+    comparison:  list[dict]           = []
+    best_result: Optional[PackResult] = None
+    best_cost:   float                = math.inf
+    best_bins:   int                  = math.inf  # type: ignore[assignment]
 
     for spec in container_specs:
-        result     = pack(items, allow_rotation=allow_rotation, container_spec=spec)
+        if cancel is not None and cancel.is_set():
+            break
+        if actual_mode == "branch_and_bound":
+            result = branch_and_bound_pack(items, allow_rotation=allow_rotation, container_spec=spec, cancel=cancel)
+        elif actual_mode == "multi_restart_k30":
+            result = multi_restart_pack(items, allow_rotation=allow_rotation, container_spec=spec, k=30, cancel=cancel)
+        elif actual_mode == "simulated_annealing":
+            result = simulated_annealing_pack(items, allow_rotation=allow_rotation, container_spec=spec, cancel=cancel)
+        else:
+            result = pack(items, allow_rotation=allow_rotation, container_spec=spec)
         total_cost = len(result.bins) * spec.cost_usd
         comparison.append({
             "type_name":  spec.name,
             "num_bins":   len(result.bins),
             "total_cost": round(total_cost, 2),
         })
-        n = len(result.bins)
-        if best_result is None or (total_cost, n) < (best_cost, best_bins):
+        nb = len(result.bins)
+        if best_result is None or (total_cost, nb) < (best_cost, best_bins):
             best_cost   = total_cost
-            best_bins   = n
+            best_bins   = nb
             best_result = result
 
-    return best_result, comparison  # type: ignore[return-value]
+    # Cancelled before any spec was evaluated — fall back to fast greedy
+    if best_result is None:
+        best_result = pack(items, allow_rotation=allow_rotation)
+
+    return best_result, comparison, actual_mode

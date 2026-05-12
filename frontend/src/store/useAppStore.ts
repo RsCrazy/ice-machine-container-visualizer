@@ -88,12 +88,14 @@ export interface AppState {
   // ui
   isLoading: boolean
   error: string | null
+  solveMode: 'fast' | 'multi_restart' | 'optimized' | 'exact'
 
   // actions
   setItems: (items: ItemIn[]) => void
   addItem: (item: ItemIn) => void
   removeItem: (name: string) => void
   setAllowRotation: (v: boolean) => void
+  setSolveMode: (m: 'fast' | 'multi_restart' | 'optimized' | 'exact') => void
   setPackResult: (r: PackResponse | null) => void
   setActiveBin: (i: number) => void
   setLayerHeight: (h: number) => void
@@ -156,11 +158,13 @@ export const useAppStore = create<AppState>((set) => ({
   highlightedItem: null,
   isLoading: false,
   error: null,
+  solveMode: 'fast',
 
   setItems:           (items) => set({ items }),
   addItem:            (item) => set((s) => ({ items: [...s.items, item] })),
   removeItem:         (name) => set((s) => ({ items: s.items.filter((i) => i.name !== name) })),
   setAllowRotation:   (v) => set({ allowRotation: v }),
+  setSolveMode:       (m) => set({ solveMode: m }),
   setPackResult:      (r) => set({
     packResult: r,
     activeBin: 0,

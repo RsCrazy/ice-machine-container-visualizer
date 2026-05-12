@@ -3,7 +3,19 @@ import type { ContainerType, ImportPreview, ItemIn, PackResponse } from '../type
 async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
-    throw new Error(body.detail ?? `HTTP ${res.status}`)
+    const detail = body.detail
+    let message: string
+    if (typeof detail === 'string') {
+      message = detail
+    } else if (Array.isArray(detail)) {
+      // Pydantic validation error: [{loc, msg, type}, ...]
+      message = detail.map((e: Record<string, unknown>) =>
+        typeof e.msg === 'string' ? e.msg : JSON.stringify(e)
+      ).join('; ')
+    } else {
+      message = `HTTP ${res.status}`
+    }
+    throw new Error(message)
   }
   return res.json() as Promise<T>
 }
@@ -12,6 +24,8 @@ export async function packItems(
   items: ItemIn[],
   allowRotation = true,
   containerTypes: ContainerType[] = [],
+  solveMode: 'fast' | 'multi_restart' | 'optimized' | 'exact' = 'fast',
+  signal?: AbortSignal,
 ): Promise<PackResponse> {
   const body: Record<string, unknown> = {
     items: items.map(i => ({
@@ -19,6 +33,7 @@ export async function packItems(
       allow_free_rotation: i.allow_free_rotation ?? false,
     })),
     allow_rotation: allowRotation,
+    solve_mode: solveMode,
   }
 
   if (containerTypes.length > 0) {
@@ -35,6 +50,7 @@ export async function packItems(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    signal,
   })
   return handleResponse<PackResponse>(res)
 }

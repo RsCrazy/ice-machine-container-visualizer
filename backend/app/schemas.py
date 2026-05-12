@@ -4,7 +4,7 @@ All dimensions are millimetres, weight in kilograms.
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 from pydantic import BaseModel, Field, field_validator
 
 from .models import CONTAINER_H, CONTAINER_L, CONTAINER_W
@@ -42,11 +42,12 @@ class ItemIn(BaseModel):
 
 
 class PackRequest(BaseModel):
-    items:           list[ItemIn]          = Field(..., min_length=1)
-    allow_rotation:  bool                  = True
-    container_types: list[ContainerTypeIn] = Field(
+    items:           list[ItemIn]                 = Field(..., min_length=1)
+    allow_rotation:  bool                         = True
+    container_types: list[ContainerTypeIn]        = Field(
         default_factory=lambda: [_DEFAULT_20GP]
     )
+    solve_mode:      Literal["fast", "multi_restart", "optimized", "exact"] = "fast"
 
     @field_validator("items")
     @classmethod
@@ -106,6 +107,8 @@ class PackResponse(BaseModel):
     lower_bound:     int
     stats:           dict[str, Any]
     cost_comparison: list[CostComparisonItem] = Field(default_factory=list)
+    solve_time_ms:   float                    = 0.0
+    solve_mode_used: str                      = "fast"
 
 
 # ── Import preview (before packing) ──────────────────────────────────────────

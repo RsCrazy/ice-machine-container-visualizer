@@ -43,6 +43,20 @@ export default function StatsPanel() {
         <div className="mt-2 text-[10px] text-[#50c87a]">✓ 已达理论最优</div>
       )}
 
+      {/* ── Solve info ── */}
+      {(packResult.solve_time_ms !== undefined || packResult.solve_mode_used) && (
+        <div className="mt-2 flex justify-between text-[10px]">
+          <span className="text-[#444]">求解算法</span>
+          <span className="text-[#555]">{packResult.solve_mode_used ?? '—'}</span>
+        </div>
+      )}
+      {packResult.solve_time_ms !== undefined && packResult.solve_time_ms > 0 && (
+        <div className="flex justify-between text-[10px]">
+          <span className="text-[#444]">求解耗时</span>
+          <span className="text-[#555]">{packResult.solve_time_ms.toFixed(1)} ms</span>
+        </div>
+      )}
+
       {/* ── Cost comparison table ── */}
       {hasCost && (
         <div className="mt-3">
