@@ -24,7 +24,8 @@ export async function packItems(
   items: ItemIn[],
   allowRotation = true,
   containerTypes: ContainerType[] = [],
-  solveMode: 'fast' | 'multi_restart' | 'optimized' = 'fast',
+  solveMode: 'fast' | 'multi_restart' | 'optimized' | 'exact' = 'fast',
+  signal?: AbortSignal,
 ): Promise<PackResponse> {
   const body: Record<string, unknown> = {
     items: items.map(i => ({
@@ -49,6 +50,7 @@ export async function packItems(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    signal,
   })
   return handleResponse<PackResponse>(res)
 }

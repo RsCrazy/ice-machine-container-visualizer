@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { packItems } from '../../api/client'
 import { useAppStore } from '../../store/useAppStore'
 import { exportToPdf } from '../../utils/exportPdf'
@@ -22,6 +22,7 @@ export default function LeftPanel() {
   const [tab, setTab] = useState<Tab>('cargo')
   const [showForm, setShowForm] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
+  const abortRef = useRef<AbortController | null>(null)
 
   const selectedContainers = containerTypes.filter((c) =>
     selectedContainerIds.includes(c.id)
@@ -31,14 +32,24 @@ export default function LeftPanel() {
     if (items.length === 0) return
     setLoading(true)
     setError(null)
+    abortRef.current = new AbortController()
     try {
-      const result = await packItems(items, allowRotation, selectedContainers, solveMode)
+      const result = await packItems(items, allowRotation, selectedContainers, solveMode, abortRef.current.signal)
       setPackResult(result)
     } catch (e) {
-      setError(e instanceof Error ? e.message : '请求失败')
+      if (e instanceof Error && e.name === 'AbortError') {
+        // user cancelled — silent
+      } else {
+        setError(e instanceof Error ? e.message : '请求失败')
+      }
     } finally {
       setLoading(false)
+      abortRef.current = null
     }
+  }
+
+  const handleAbort = () => {
+    abortRef.current?.abort()
   }
 
   const handleExport = () => {
@@ -156,6 +167,13 @@ export default function LeftPanel() {
               </div>
             )}
 
+            {/* B&B large-n warning */}
+            {solveMode === 'exact' && items.length > 15 && !packResult && (
+              <div className="px-2.5 py-2 rounded-md bg-[#e8944f]/10 border border-[#e8944f]/30 text-[10px] text-[#e8944f] leading-relaxed">
+                ⚠ 当前 {items.length} 件货物，B&B 搜索树极大，运算可能需要数小时甚至更长。建议改用「退火」模式。
+              </div>
+            )}
+
             {!packResult ? (
               <>
                 <button
@@ -167,15 +185,35 @@ export default function LeftPanel() {
                 >
                   清空货物
                 </button>
-                <button
-                  onClick={handlePack}
-                  disabled={isLoading || items.length === 0}
-                  className="w-full py-2.5 rounded-lg text-sm font-medium transition-all
-                    bg-[#c9a96e]/20 text-[#c9a96e] border border-[#c9a96e]/30
-                    hover:bg-[#c9a96e]/30 disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  {isLoading ? '计算中…' : '开始装载'}
-                </button>
+                {isLoading ? (
+                  <div className="space-y-2">
+                    <button
+                      disabled
+                      className="w-full py-2.5 rounded-lg text-sm font-medium
+                        bg-[#c9a96e]/10 text-[#c9a96e]/50 border border-[#c9a96e]/20 cursor-not-allowed"
+                    >
+                      计算中…
+                    </button>
+                    <button
+                      onClick={handleAbort}
+                      className="w-full py-2 rounded-lg text-sm font-medium transition-all
+                        bg-[#e86e6e]/10 text-[#e86e6e] border border-[#e86e6e]/30
+                        hover:bg-[#e86e6e]/20"
+                    >
+                      终止运算
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={handlePack}
+                    disabled={items.length === 0}
+                    className="w-full py-2.5 rounded-lg text-sm font-medium transition-all
+                      bg-[#c9a96e]/20 text-[#c9a96e] border border-[#c9a96e]/30
+                      hover:bg-[#c9a96e]/30 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    开始装载
+                  </button>
+                )}
               </>
             ) : (
               <>
