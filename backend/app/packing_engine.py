@@ -450,7 +450,8 @@ def pack_best_cost(
     """
     Run packing for each container spec; return (best_result, comparison, actual_mode).
 
-    solve_mode="optimized": uses simulated_annealing_pack for n≤100, else fast.
+    solve_mode="multi_restart": uses multi_restart_pack (k=30) for n≤100, else fast.
+    solve_mode="optimized":    uses simulated_annealing_pack for n≤100, else fast.
     When costs are equal, prefer the result with fewer bins.
     When container_specs is empty, falls back to DEFAULT_20GP.
     """
@@ -458,7 +459,9 @@ def pack_best_cost(
         container_specs = [DEFAULT_20GP]
 
     n = len(items)
-    if solve_mode == "optimized" and 0 < n <= 100:
+    if solve_mode == "multi_restart" and 0 < n <= 100:
+        actual_mode = "multi_restart_k30"
+    elif solve_mode == "optimized" and 0 < n <= 100:
         actual_mode = "simulated_annealing"
     else:
         actual_mode = "fast"
@@ -469,11 +472,12 @@ def pack_best_cost(
     best_bins:   int                  = math.inf  # type: ignore[assignment]
 
     for spec in container_specs:
-        result = (
-            simulated_annealing_pack(items, allow_rotation=allow_rotation, container_spec=spec)
-            if actual_mode == "simulated_annealing"
-            else pack(items, allow_rotation=allow_rotation, container_spec=spec)
-        )
+        if actual_mode == "multi_restart_k30":
+            result = multi_restart_pack(items, allow_rotation=allow_rotation, container_spec=spec, k=30)
+        elif actual_mode == "simulated_annealing":
+            result = simulated_annealing_pack(items, allow_rotation=allow_rotation, container_spec=spec)
+        else:
+            result = pack(items, allow_rotation=allow_rotation, container_spec=spec)
         total_cost = len(result.bins) * spec.cost_usd
         comparison.append({
             "type_name":  spec.name,

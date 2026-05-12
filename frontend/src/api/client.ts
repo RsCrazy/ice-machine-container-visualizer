@@ -12,7 +12,7 @@ export async function packItems(
   items: ItemIn[],
   allowRotation = true,
   containerTypes: ContainerType[] = [],
-  solveMode: 'fast' | 'optimized' = 'fast',
+  solveMode: 'fast' | 'multi_restart' | 'optimized' = 'fast',
 ): Promise<PackResponse> {
   const body: Record<string, unknown> = {
     items: items.map(i => ({

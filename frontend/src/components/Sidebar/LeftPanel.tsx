@@ -122,24 +122,25 @@ export default function LeftPanel() {
             </label>
 
             {/* Solve mode toggle */}
-            <div className="flex items-center gap-2">
+            <div className="space-y-1">
               <div className="flex rounded-md border border-[#2a2a2a] overflow-hidden text-[11px]">
-                <button
-                  onClick={() => setSolveMode('fast')}
-                  className={`px-3 py-1 transition-colors ${solveMode === 'fast' ? 'bg-[#c9a96e]/20 text-[#c9a96e]' : 'text-[#444] hover:text-[#666]'}`}
-                >
-                  快速
-                </button>
-                <button
-                  onClick={() => setSolveMode('optimized')}
-                  className={`px-3 py-1 transition-colors border-l border-[#2a2a2a] ${solveMode === 'optimized' ? 'bg-[#c9a96e]/20 text-[#c9a96e]' : 'text-[#444] hover:text-[#666]'}`}
-                >
-                  精确
-                </button>
+                {([ ['fast', '快速'], ['multi_restart', '多重启'], ['optimized', '模拟退火'] ] as const).map(([mode, label], idx) => (
+                  <button
+                    key={mode}
+                    onClick={() => setSolveMode(mode)}
+                    className={`flex-1 py-1 transition-colors ${idx > 0 ? 'border-l border-[#2a2a2a]' : ''} ${
+                      solveMode === mode ? 'bg-[#c9a96e]/20 text-[#c9a96e]' : 'text-[#444] hover:text-[#666]'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
-              <span className="text-[10px] text-[#444]">
-                {solveMode === 'optimized' ? 'n≤100 模拟退火，每类型≤10s' : '单次贪心，&lt;100ms'}
-              </span>
+              <div className="text-[10px] text-[#444]">
+                {solveMode === 'fast'         && '单次贪心，<100ms'}
+                {solveMode === 'multi_restart' && 'n≤100 随机重启×30，约 1-3s'}
+                {solveMode === 'optimized'     && 'n≤100 模拟退火，每类型≤10s'}
+              </div>
             </div>
 
             {/* Container selection hint */}

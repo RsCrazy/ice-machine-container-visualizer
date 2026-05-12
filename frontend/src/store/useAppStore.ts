@@ -88,14 +88,14 @@ export interface AppState {
   // ui
   isLoading: boolean
   error: string | null
-  solveMode: 'fast' | 'optimized'
+  solveMode: 'fast' | 'multi_restart' | 'optimized'
 
   // actions
   setItems: (items: ItemIn[]) => void
   addItem: (item: ItemIn) => void
   removeItem: (name: string) => void
   setAllowRotation: (v: boolean) => void
-  setSolveMode: (m: 'fast' | 'optimized') => void
+  setSolveMode: (m: 'fast' | 'multi_restart' | 'optimized') => void
   setPackResult: (r: PackResponse | null) => void
   setActiveBin: (i: number) => void
   setLayerHeight: (h: number) => void
