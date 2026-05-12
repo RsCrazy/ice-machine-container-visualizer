@@ -3,7 +3,19 @@ import type { ContainerType, ImportPreview, ItemIn, PackResponse } from '../type
 async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
-    throw new Error(body.detail ?? `HTTP ${res.status}`)
+    const detail = body.detail
+    let message: string
+    if (typeof detail === 'string') {
+      message = detail
+    } else if (Array.isArray(detail)) {
+      // Pydantic validation error: [{loc, msg, type}, ...]
+      message = detail.map((e: Record<string, unknown>) =>
+        typeof e.msg === 'string' ? e.msg : JSON.stringify(e)
+      ).join('; ')
+    } else {
+      message = `HTTP ${res.status}`
+    }
+    throw new Error(message)
   }
   return res.json() as Promise<T>
 }
