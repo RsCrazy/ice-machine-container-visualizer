@@ -47,7 +47,7 @@ class PackRequest(BaseModel):
     container_types: list[ContainerTypeIn]        = Field(
         default_factory=lambda: [_DEFAULT_20GP]
     )
-    solve_mode:      Literal["fast", "multi_restart", "optimized"] = "fast"
+    solve_mode:      Literal["fast", "multi_restart", "optimized", "exact"] = "fast"
 
     @field_validator("items")
     @classmethod

@@ -33,6 +33,7 @@ from __future__ import annotations
 import copy
 import math
 import random
+import threading
 import time
 from typing import Optional
 
@@ -333,6 +334,7 @@ def multi_restart_pack(
     container_spec: Optional[ContainerSpec] = None,
     k: int = 30,
     seed: Optional[int] = None,
+    cancel: Optional[threading.Event] = None,
 ) -> PackResult:
     """
     Run BFD packing k times with different item orderings; return the result
@@ -348,6 +350,9 @@ def multi_restart_pack(
     best: Optional[PackResult] = None
 
     for i in range(k):
+        if cancel is not None and cancel.is_set():
+            break
+
         if i == 0:
             order: list[Item] = sorted(items, key=lambda x: (-x.weight, -x.volume))
         else:
@@ -371,6 +376,7 @@ def simulated_annealing_pack(
     container_spec: Optional[ContainerSpec] = None,
     time_limit: float = 10.0,
     seed: Optional[int] = None,
+    cancel: Optional[threading.Event] = None,
 ) -> PackResult:
     """
     Simulated annealing over item permutations.
@@ -407,6 +413,8 @@ def simulated_annealing_pack(
     while True:
         elapsed = time.perf_counter() - t_start
         if elapsed >= time_limit:
+            break
+        if cancel is not None and cancel.is_set():
             break
 
         T        = T0 * math.exp(log_ratio * (elapsed / time_limit))
@@ -445,6 +453,7 @@ def branch_and_bound_pack(
     items: list[Item],
     allow_rotation: bool = True,
     container_spec: Optional[ContainerSpec] = None,
+    cancel: Optional[threading.Event] = None,
 ) -> PackResult:
     """
     Guided exhaustive search over item permutations with look-ahead pruning.
@@ -476,6 +485,8 @@ def branch_and_bound_pack(
     def dfs(prefix: list[Item], remaining: list[Item]) -> None:
         if best_n[0] <= lb:
             return
+        if cancel is not None and cancel.is_set():
+            return
 
         if not remaining:
             result = _pack_sorted(prefix, allow_rotation, spec)
@@ -488,6 +499,8 @@ def branch_and_bound_pack(
         seen: set[tuple[int, int, int, int]] = set()
         for i, itm in enumerate(remaining):
             if best_n[0] <= lb:
+                break
+            if cancel is not None and cancel.is_set():
                 break
 
             # Deduplicate: identical items are interchangeable
@@ -518,6 +531,7 @@ def pack_best_cost(
     container_specs: list[ContainerSpec],
     allow_rotation: bool = True,
     solve_mode: str = "fast",
+    cancel: Optional[threading.Event] = None,
 ) -> tuple[PackResult, list[dict], str]:
     """
     Run packing for each container spec; return (best_result, comparison, actual_mode).
@@ -546,12 +560,14 @@ def pack_best_cost(
     best_bins:   int                  = math.inf  # type: ignore[assignment]
 
     for spec in container_specs:
+        if cancel is not None and cancel.is_set():
+            break
         if actual_mode == "branch_and_bound":
-            result = branch_and_bound_pack(items, allow_rotation=allow_rotation, container_spec=spec)
+            result = branch_and_bound_pack(items, allow_rotation=allow_rotation, container_spec=spec, cancel=cancel)
         elif actual_mode == "multi_restart_k30":
-            result = multi_restart_pack(items, allow_rotation=allow_rotation, container_spec=spec, k=30)
+            result = multi_restart_pack(items, allow_rotation=allow_rotation, container_spec=spec, k=30, cancel=cancel)
         elif actual_mode == "simulated_annealing":
-            result = simulated_annealing_pack(items, allow_rotation=allow_rotation, container_spec=spec)
+            result = simulated_annealing_pack(items, allow_rotation=allow_rotation, container_spec=spec, cancel=cancel)
         else:
             result = pack(items, allow_rotation=allow_rotation, container_spec=spec)
         total_cost = len(result.bins) * spec.cost_usd
@@ -566,4 +582,8 @@ def pack_best_cost(
             best_bins   = nb
             best_result = result
 
-    return best_result, comparison, actual_mode  # type: ignore[return-value]
+    # Cancelled before any spec was evaluated — fall back to fast greedy
+    if best_result is None:
+        best_result = pack(items, allow_rotation=allow_rotation)
+
+    return best_result, comparison, actual_mode

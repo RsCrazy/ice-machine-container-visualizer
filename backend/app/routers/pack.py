@@ -5,9 +5,11 @@ Accepts a JSON cargo manifest, runs the packing algorithm, returns full result.
 """
 from __future__ import annotations
 
+import asyncio
+import threading
 import time
 from typing import Optional
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 
 from ..models import ContainerSpec, Item
 from ..packing_engine import pack_best_cost
@@ -90,7 +92,7 @@ def _build_response(
 
 
 @router.post("", response_model=PackResponse, summary="Pack cargo into containers")
-def pack_items(req: PackRequest) -> PackResponse:
+async def pack_items(req: PackRequest, request: Request) -> PackResponse:
     items = [
         Item(
             name=i.name,
@@ -115,11 +117,26 @@ def pack_items(req: PackRequest) -> PackResponse:
         for ct in req.container_types
     ]
 
+    cancel = threading.Event()
+    loop = asyncio.get_event_loop()
     t0 = time.perf_counter()
-    result, comparison, mode_used = pack_best_cost(
-        items, specs,
-        allow_rotation=req.allow_rotation,
-        solve_mode=req.solve_mode,
+
+    pack_future = loop.run_in_executor(
+        None,
+        lambda: pack_best_cost(
+            items, specs,
+            allow_rotation=req.allow_rotation,
+            solve_mode=req.solve_mode,
+            cancel=cancel,
+        ),
     )
+
+    while not pack_future.done():
+        if await request.is_disconnected():
+            cancel.set()
+            break
+        await asyncio.sleep(0.3)
+
+    result, comparison, mode_used = await pack_future
     elapsed_ms = (time.perf_counter() - t0) * 1000
     return _build_response(result, comparison, solve_time_ms=elapsed_ms, solve_mode_used=mode_used)
