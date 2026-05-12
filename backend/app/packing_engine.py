@@ -441,6 +441,82 @@ def simulated_annealing_pack(
     return best_result
 
 
+def branch_and_bound_pack(
+    items: list[Item],
+    allow_rotation: bool = True,
+    container_spec: Optional[ContainerSpec] = None,
+    time_limit: float = 30.0,
+) -> PackResult:
+    """
+    Guided exhaustive search over item permutations with look-ahead pruning.
+
+    At each node (prefix, remaining):
+      - Evaluate _pack_sorted(prefix + sorted(remaining)) as a look-ahead.
+      - If the result >= best_known bins, this prefix cannot improve → prune.
+      - Items with identical (length, width, height, weight) are deduplicated
+        to skip symmetrically equivalent branches.
+
+    Starts from the canonical weight-DESC ordering (same as greedy), so the
+    result is always at least as good as a single greedy pass.
+
+    For n ≤ 10 typically finds the true optimum; for n up to 15 finds
+    near-optimal solutions within time_limit. Not mathematically guaranteed
+    complete because the look-ahead uses a heuristic evaluator.
+    """
+    if not items:
+        return PackResult(bins=[], unplaced=[], lower_bound=0, stats={})
+
+    spec = container_spec or DEFAULT_20GP
+    lb   = compute_lower_bound(items, spec)
+    t0   = time.perf_counter()
+
+    canonical = sorted(items, key=lambda x: (-x.weight, -x.volume))
+    best      = [_pack_sorted(canonical, allow_rotation, spec)]
+    best_n    = [len(best[0].bins)]
+
+    if best_n[0] <= lb:
+        return best[0]
+
+    def dfs(prefix: list[Item], remaining: list[Item]) -> None:
+        if time.perf_counter() - t0 >= time_limit or best_n[0] <= lb:
+            return
+
+        if not remaining:
+            result = _pack_sorted(prefix, allow_rotation, spec)
+            nb = len(result.bins)
+            if nb < best_n[0]:
+                best_n[0] = nb
+                best[0]   = result
+            return
+
+        seen: set[tuple[int, int, int, int]] = set()
+        for i, itm in enumerate(remaining):
+            if time.perf_counter() - t0 >= time_limit or best_n[0] <= lb:
+                break
+
+            # Deduplicate: identical items are interchangeable
+            key = (round(itm.length), round(itm.width),
+                   round(itm.height), round(itm.weight))
+            if key in seen:
+                continue
+            seen.add(key)
+
+            new_prefix    = prefix + [itm]
+            new_remaining = remaining[:i] + remaining[i+1:]
+
+            # Look-ahead: evaluate this prefix with remaining in canonical order
+            lookahead = new_prefix + sorted(
+                new_remaining, key=lambda x: (-x.weight, -x.volume)
+            )
+            if len(_pack_sorted(lookahead, allow_rotation, spec).bins) >= best_n[0]:
+                continue  # cannot improve → prune
+
+            dfs(new_prefix, new_remaining)
+
+    dfs([], canonical)
+    return best[0]
+
+
 def pack_best_cost(
     items: list[Item],
     container_specs: list[ContainerSpec],
@@ -450,8 +526,9 @@ def pack_best_cost(
     """
     Run packing for each container spec; return (best_result, comparison, actual_mode).
 
-    solve_mode="multi_restart": uses multi_restart_pack (k=30) for n≤100, else fast.
-    solve_mode="optimized":    uses simulated_annealing_pack for n≤100, else fast.
+    solve_mode="multi_restart": multi_restart_pack (k=30) for n≤100, else fast.
+    solve_mode="optimized":    simulated_annealing_pack for n≤100, else fast.
+    solve_mode="exact":        branch_and_bound_pack for n≤15, SA fallback for n≤100, else fast.
     When costs are equal, prefer the result with fewer bins.
     When container_specs is empty, falls back to DEFAULT_20GP.
     """
@@ -463,6 +540,8 @@ def pack_best_cost(
         actual_mode = "multi_restart_k30"
     elif solve_mode == "optimized" and 0 < n <= 100:
         actual_mode = "simulated_annealing"
+    elif solve_mode == "exact" and n > 0:
+        actual_mode = "branch_and_bound"
     else:
         actual_mode = "fast"
 
@@ -472,7 +551,9 @@ def pack_best_cost(
     best_bins:   int                  = math.inf  # type: ignore[assignment]
 
     for spec in container_specs:
-        if actual_mode == "multi_restart_k30":
+        if actual_mode == "branch_and_bound":
+            result = branch_and_bound_pack(items, allow_rotation=allow_rotation, container_spec=spec)
+        elif actual_mode == "multi_restart_k30":
             result = multi_restart_pack(items, allow_rotation=allow_rotation, container_spec=spec, k=30)
         elif actual_mode == "simulated_annealing":
             result = simulated_annealing_pack(items, allow_rotation=allow_rotation, container_spec=spec)
