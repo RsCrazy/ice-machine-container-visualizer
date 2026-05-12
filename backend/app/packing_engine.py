@@ -504,8 +504,8 @@ def branch_and_bound_pack(
             lookahead = new_prefix + sorted(
                 new_remaining, key=lambda x: (-x.weight, -x.volume)
             )
-            if len(_pack_sorted(lookahead, allow_rotation, spec).bins) >= best_n[0]:
-                continue  # cannot improve → prune
+            if len(_pack_sorted(lookahead, allow_rotation, spec).bins) > best_n[0]:
+                continue  # strictly worse than current best → prune
 
             dfs(new_prefix, new_remaining)
 
