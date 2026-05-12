@@ -15,6 +15,7 @@ export default function LeftPanel() {
   const {
     items, allowRotation, packResult,
     containerTypes, selectedContainerIds,
+    solveMode, setSolveMode,
     setPackResult, setAllowRotation, setLoading, setError,
     isLoading, error, reset, setItems,
   } = useAppStore()
@@ -31,7 +32,7 @@ export default function LeftPanel() {
     setLoading(true)
     setError(null)
     try {
-      const result = await packItems(items, allowRotation, selectedContainers)
+      const result = await packItems(items, allowRotation, selectedContainers, solveMode)
       setPackResult(result)
     } catch (e) {
       setError(e instanceof Error ? e.message : '请求失败')
@@ -119,6 +120,27 @@ export default function LeftPanel() {
               </div>
               <span className="text-xs text-[#555]">允许水平旋转 90°</span>
             </label>
+
+            {/* Solve mode toggle */}
+            <div className="flex items-center gap-2">
+              <div className="flex rounded-md border border-[#2a2a2a] overflow-hidden text-[11px]">
+                <button
+                  onClick={() => setSolveMode('fast')}
+                  className={`px-3 py-1 transition-colors ${solveMode === 'fast' ? 'bg-[#c9a96e]/20 text-[#c9a96e]' : 'text-[#444] hover:text-[#666]'}`}
+                >
+                  快速
+                </button>
+                <button
+                  onClick={() => setSolveMode('optimized')}
+                  className={`px-3 py-1 transition-colors border-l border-[#2a2a2a] ${solveMode === 'optimized' ? 'bg-[#c9a96e]/20 text-[#c9a96e]' : 'text-[#444] hover:text-[#666]'}`}
+                >
+                  精确
+                </button>
+              </div>
+              <span className="text-[10px] text-[#444]">
+                {solveMode === 'optimized' ? 'n≤100 多重启，约 2-5s' : '单次贪心，&lt;100ms'}
+              </span>
+            </div>
 
             {/* Container selection hint */}
             {!packResult && (

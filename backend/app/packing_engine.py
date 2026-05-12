@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import copy
 import math
+import random
 from typing import Optional
 
 from .models import (
@@ -260,22 +261,13 @@ def _local_search(bins: list[Bin], allow_rotation: bool) -> list[Bin]:
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
-def pack(
-    items: list[Item],
-    allow_rotation: bool = True,
-    container_spec: Optional[ContainerSpec] = None,
+def _pack_sorted(
+    sorted_items: list[Item],
+    allow_rotation: bool,
+    spec: ContainerSpec,
 ) -> PackResult:
-    """
-    Determine the minimum number of containers (of the given type) required
-    to load all items.
-    """
-    if not items:
-        return PackResult(bins=[], unplaced=[], lower_bound=0, stats={})
-
-    spec         = container_spec or DEFAULT_20GP
-    sorted_items = sorted(items, key=lambda i: (-i.weight, -i.volume))
-    lb           = compute_lower_bound(sorted_items, spec)
-
+    """BFD + EP + local search on a pre-ordered item list (no internal re-sort)."""
+    lb        = compute_lower_bound(sorted_items, spec)
     bins:     list[Bin]  = []
     unplaced: list[Item] = []
 
@@ -305,8 +297,8 @@ def pack(
     bins = _local_search(bins, allow_rotation)
 
     cv        = spec.L * spec.W * spec.H
-    total_vol = sum(i.volume for i in items)
-    total_kg  = sum(i.weight for i in items)
+    total_vol = sum(i.volume for i in sorted_items)
+    total_kg  = sum(i.weight for i in sorted_items)
     n_bins    = len(bins)
 
     stats = {
@@ -318,42 +310,104 @@ def pack(
         "unplaced_count":   len(unplaced),
         "items_packed":     sum(len(b.placed) for b in bins),
     }
-
     return PackResult(bins=bins, unplaced=unplaced, lower_bound=lb, stats=stats)
+
+
+def pack(
+    items: list[Item],
+    allow_rotation: bool = True,
+    container_spec: Optional[ContainerSpec] = None,
+) -> PackResult:
+    """Single-pass BFD greedy with canonical weight-DESC ordering."""
+    if not items:
+        return PackResult(bins=[], unplaced=[], lower_bound=0, stats={})
+    spec = container_spec or DEFAULT_20GP
+    return _pack_sorted(sorted(items, key=lambda i: (-i.weight, -i.volume)), allow_rotation, spec)
+
+
+def multi_restart_pack(
+    items: list[Item],
+    allow_rotation: bool = True,
+    container_spec: Optional[ContainerSpec] = None,
+    k: int = 30,
+    seed: Optional[int] = None,
+) -> PackResult:
+    """
+    Run BFD packing k times with different item orderings; return the result
+    with fewest bins. Restart 0 uses canonical weight-DESC ordering so the
+    result is always at least as good as a single greedy pass.
+    """
+    if not items:
+        return PackResult(bins=[], unplaced=[], lower_bound=0, stats={})
+
+    spec = container_spec or DEFAULT_20GP
+    lb   = compute_lower_bound(items, spec)
+    rng  = random.Random(seed)
+    best: Optional[PackResult] = None
+
+    for i in range(k):
+        if i == 0:
+            order: list[Item] = sorted(items, key=lambda x: (-x.weight, -x.volume))
+        else:
+            order = items[:]
+            rng.shuffle(order)
+
+        result = _pack_sorted(order, allow_rotation, spec)
+
+        if best is None or len(result.bins) < len(best.bins):
+            best = result
+
+        if len(best.bins) <= lb:
+            break
+
+    return best  # type: ignore[return-value]
 
 
 def pack_best_cost(
     items: list[Item],
     container_specs: list[ContainerSpec],
     allow_rotation: bool = True,
-) -> tuple[PackResult, list[dict]]:
+    solve_mode: str = "fast",
+) -> tuple[PackResult, list[dict], str]:
     """
-    Run pack() for each container spec; return the result with minimum total
-    cost together with a full comparison list.
+    Run packing for each container spec; return (best_result, comparison, actual_mode).
 
+    solve_mode="optimized": uses multi_restart_pack (k=30) for n≤100, else fast.
     When costs are equal, prefer the result with fewer bins.
     When container_specs is empty, falls back to DEFAULT_20GP.
     """
     if not container_specs:
         container_specs = [DEFAULT_20GP]
 
-    comparison:  list[dict]            = []
-    best_result: Optional[PackResult]  = None
-    best_cost:   float                 = math.inf
-    best_bins:   int                   = math.inf  # type: ignore[assignment]
+    n = len(items)
+    if solve_mode == "optimized" and n <= 100:
+        k           = 30
+        actual_mode = f"multi_restart_k{k}"
+    else:
+        k           = 0
+        actual_mode = "fast"
+
+    comparison:  list[dict]           = []
+    best_result: Optional[PackResult] = None
+    best_cost:   float                = math.inf
+    best_bins:   int                  = math.inf  # type: ignore[assignment]
 
     for spec in container_specs:
-        result     = pack(items, allow_rotation=allow_rotation, container_spec=spec)
+        result = (
+            multi_restart_pack(items, allow_rotation=allow_rotation, container_spec=spec, k=k)
+            if k > 0
+            else pack(items, allow_rotation=allow_rotation, container_spec=spec)
+        )
         total_cost = len(result.bins) * spec.cost_usd
         comparison.append({
             "type_name":  spec.name,
             "num_bins":   len(result.bins),
             "total_cost": round(total_cost, 2),
         })
-        n = len(result.bins)
-        if best_result is None or (total_cost, n) < (best_cost, best_bins):
+        nb = len(result.bins)
+        if best_result is None or (total_cost, nb) < (best_cost, best_bins):
             best_cost   = total_cost
-            best_bins   = n
+            best_bins   = nb
             best_result = result
 
-    return best_result, comparison  # type: ignore[return-value]
+    return best_result, comparison, actual_mode  # type: ignore[return-value]

@@ -12,6 +12,7 @@ export async function packItems(
   items: ItemIn[],
   allowRotation = true,
   containerTypes: ContainerType[] = [],
+  solveMode: 'fast' | 'optimized' = 'fast',
 ): Promise<PackResponse> {
   const body: Record<string, unknown> = {
     items: items.map(i => ({
@@ -19,6 +20,7 @@ export async function packItems(
       allow_free_rotation: i.allow_free_rotation ?? false,
     })),
     allow_rotation: allowRotation,
+    solve_mode: solveMode,
   }
 
   if (containerTypes.length > 0) {

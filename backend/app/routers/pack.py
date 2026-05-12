@@ -5,6 +5,7 @@ Accepts a JSON cargo manifest, runs the packing algorithm, returns full result.
 """
 from __future__ import annotations
 
+import time
 from typing import Optional
 from fastapi import APIRouter
 
@@ -18,7 +19,12 @@ from ..schemas import (
 router = APIRouter()
 
 
-def _build_response(result, cost_comparison: Optional[list[dict]] = None) -> PackResponse:
+def _build_response(
+    result,
+    cost_comparison: Optional[list[dict]] = None,
+    solve_time_ms: float = 0.0,
+    solve_mode_used: str = "fast",
+) -> PackResponse:
     bins_out = []
     for idx, b in enumerate(result.bins, start=1):
         placed_out = [
@@ -78,6 +84,8 @@ def _build_response(result, cost_comparison: Optional[list[dict]] = None) -> Pac
         lower_bound=result.lower_bound,
         stats=result.stats,
         cost_comparison=cost_items,
+        solve_time_ms=round(solve_time_ms, 1),
+        solve_mode_used=solve_mode_used,
     )
 
 
@@ -107,5 +115,11 @@ def pack_items(req: PackRequest) -> PackResponse:
         for ct in req.container_types
     ]
 
-    result, comparison = pack_best_cost(items, specs, allow_rotation=req.allow_rotation)
-    return _build_response(result, comparison)
+    t0 = time.perf_counter()
+    result, comparison, mode_used = pack_best_cost(
+        items, specs,
+        allow_rotation=req.allow_rotation,
+        solve_mode=req.solve_mode,
+    )
+    elapsed_ms = (time.perf_counter() - t0) * 1000
+    return _build_response(result, comparison, solve_time_ms=elapsed_ms, solve_mode_used=mode_used)
