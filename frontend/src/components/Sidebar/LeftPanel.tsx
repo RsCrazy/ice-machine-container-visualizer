@@ -138,7 +138,7 @@ export default function LeftPanel() {
                 </button>
               </div>
               <span className="text-[10px] text-[#444]">
-                {solveMode === 'optimized' ? 'n≤100 多重启，约 2-5s' : '单次贪心，&lt;100ms'}
+                {solveMode === 'optimized' ? 'n≤100 模拟退火，每类型≤10s' : '单次贪心，&lt;100ms'}
               </span>
             </div>
 

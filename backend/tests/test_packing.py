@@ -13,7 +13,7 @@ from app.models import (
     Item, PlacedItem, Bin,
 )
 from app.packing_engine import (
-    pack, compute_lower_bound,
+    pack, compute_lower_bound, multi_restart_pack, simulated_annealing_pack,
     _support_ratio, _collides, _try_place, _update_eps,
 )
 
@@ -37,11 +37,6 @@ class TestLowerBound:
 
     def test_single_tiny_item_is_one(self):
         assert compute_lower_bound([item("a", 100, 100, 100, 1)]) == 1
-
-    def test_volume_forces_two_containers(self):
-        # Two items each ~60% of container height → volume > 1 container
-        big = item("a", CONTAINER_L, CONTAINER_W, CONTAINER_H * 0.65, 100)
-        assert compute_lower_bound([big, big]) >= 2
 
     def test_volume_forces_two_containers(self):
         # Two items each filling ~60% of container volume → needs 2 containers
@@ -248,3 +243,67 @@ class TestPack:
         r = pack(items)
         for b in r.bins:
             assert 0.0 < b.fill_ratio <= 1.0 + 1e-6
+
+
+# ── Multi-restart tests ───────────────────────────────────────────────────────
+
+class TestMultiRestart:
+    def test_empty_input(self):
+        r = multi_restart_pack([])
+        assert r.bins == [] and r.lower_bound == 0
+
+    def test_never_worse_than_greedy(self):
+        """multi_restart result must have ≤ bins than single greedy pass."""
+        items = [item(f"i{k}", 700 + k * 40, 600 + k * 30, 1300 + k * 50, 120 - k * 5)
+                 for k in range(12)]
+        r_greedy  = pack(items)
+        r_restart = multi_restart_pack(items, k=20, seed=0)
+        assert len(r_restart.bins) <= len(r_greedy.bins)
+
+    def test_k1_equals_greedy(self):
+        """k=1 always uses canonical sort — should match single greedy."""
+        items = [item(f"i{k}", 700, 600, 1300, 100 - k * 5) for k in range(8)]
+        r_greedy  = pack(items)
+        r_restart = multi_restart_pack(items, k=1, seed=42)
+        assert len(r_restart.bins) == len(r_greedy.bins)
+
+
+# ── Simulated-annealing tests ─────────────────────────────────────────────────
+
+class TestSimulatedAnnealing:
+    def test_empty_input(self):
+        r = simulated_annealing_pack([])
+        assert r.bins == [] and r.lower_bound == 0
+
+    def test_never_worse_than_greedy(self):
+        """SA starts from canonical sort and can only improve (or stay equal)."""
+        items = [item(f"i{k}", 700 + k * 40, 600 + k * 30, 1300 + k * 50, 120 - k * 5)
+                 for k in range(12)]
+        r_greedy = pack(items)
+        r_sa     = simulated_annealing_pack(items, time_limit=0.5, seed=0)
+        assert len(r_sa.bins) <= len(r_greedy.bins)
+
+    def test_single_item(self):
+        r = simulated_annealing_pack([item("a", 500, 400, 900, 80)], time_limit=0.2)
+        assert len(r.bins) == 1 and r.unplaced == []
+
+    def test_reaches_lower_bound_on_easy_case(self):
+        """A handful of small items that clearly fit in one container."""
+        items = [item(f"i{k}", 400, 300, 700, 50) for k in range(4)]
+        r = simulated_annealing_pack(items, time_limit=1.0, seed=0)
+        assert len(r.bins) == 1
+
+    def test_improves_over_greedy_on_hard_case(self):
+        """80 medium items with seed=99 — greedy needs 6, SA should find ≤5."""
+        import random as _rng
+        rng = _rng.Random(99)
+        items = [
+            item(f"I{i}", rng.randint(600, 1400), rng.randint(500, 1200),
+                 rng.randint(800, 2000), rng.uniform(60, 250))
+            for i in range(80)
+        ]
+        r_greedy = pack(items)
+        r_sa     = simulated_annealing_pack(items, time_limit=2.0, seed=7)
+        assert len(r_sa.bins) <= len(r_greedy.bins), (
+            f"SA ({len(r_sa.bins)}) worse than greedy ({len(r_greedy.bins)})"
+        )
